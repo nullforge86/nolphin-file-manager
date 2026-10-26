@@ -1,3 +1,25 @@
+nolphin (6.7.7+nolphin6) unstable; urgency=medium
+
+  * Paketierung: Nolphin wird wie gewünscht als genau ein Paket „nolphin“
+    gebaut. Programm, Daten, Übersetzungen, libnolphin-extension, GIR-Daten
+    und Entwicklerdateien liegen darin; die bisherigen Pakete nolphin-data,
+    libnolphin-extension1, libnolphin-extension-dev, gir1.2-nolphin-3.0 und
+    nolphin-dbg werden beim Update sauber ersetzt (Breaks/Replaces/Provides).
+  * Paketierung: Die deutsche Übersetzung (nolphin.mo) wird jetzt mit
+    installiert; kein zusätzliches -dbgsym-Paket mehr.
+  * Paketierung: Meson-Tests laufen beim Paketbau mit dem gebauten Schema.
+  * Seitenleiste: Zusätzlich die Nemo-Theme-Klassen (nemo-window,
+    nemo-places-sidebar, nemo-window-pane, nemo-inactive-pane), damit
+    Mint-Y/Mint-X die Seitenleiste wie bei Nemo darstellen.
+  * Seitenleiste: ~/Handy und ~/Handy/Vom Handy werden nicht mehr bei jedem
+    Neuaufbau angelegt, sondern erst beim Öffnen oder Ablegen.
+  * Seitenleiste: Ist das Fenster zu schmal, wird die dadurch erzwungene
+    Breite nicht mehr gespeichert; mit mehr Platz kehrt die gemerkte Breite
+    zurück. Die Leiste lässt sich wie bei Nemo bis 140 px verkleinern
+    (Knopf „Projekt hinzufügen …“ kürzt seine Beschriftung).
+
+ -- Kay Siebke <kaysiebke@gmail.com>  Mon, 26 Oct 2026 18:00:00 +0100
+
 nolphin (6.7.7+nolphin5) unstable; urgency=medium
 
   * GTK-Modul: Der Dateiauswahl-Dienst xdg-desktop-portal-gtk setzt selbst eine

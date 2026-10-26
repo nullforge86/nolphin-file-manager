@@ -154,6 +154,7 @@ typedef struct {
     guint phone_status_id;          /* prüft regelmäßig, ob die Handy-App angemeldet ist */
     gboolean phone_connected;       /* so wurde der Eintrag „Handy“ zuletzt gezeichnet */
     gchar *phone_uri;               /* URI des Eintrags „Handy“ (~/Handy) */
+    gchar *phone_inbox_uri;         /* URI des Eintrags „Vom Handy“ (~/Handy/Vom Handy) */
 
 } NolphinPlacesSidebar;
 
@@ -214,15 +215,13 @@ enum {
     POSITION_LOWER
 };
 
-/* URI des Ausgangsordners "~/Handy" (legt die Ordner an) oder NULL. */
+/* URI des Ausgangsordners "~/Handy" oder NULL. Legt keine Ordner an: Das
+ * geschieht erst, wenn der Eintrag geöffnet oder etwas darauf abgelegt wird. */
 static gchar *
 phone_outbox_uri (void)
 {
-    gchar *path, *uri = NULL;
+    gchar *path, *uri;
 
-    if (!nolphin_phone_ensure_folders ()) {
-        return NULL;
-    }
     path = nolphin_phone_outbox_path ();
     uri = g_filename_to_uri (path, NULL, NULL);
     g_free (path);
@@ -973,6 +972,8 @@ update_places (NolphinPlacesSidebar *sidebar)
             const gchar *inbox_icon = gtk_icon_theme_has_icon (theme, "folder-download-symbolic") ? "folder-download-symbolic" :
                                       "folder-symbolic";
 
+            g_free (sidebar->phone_inbox_uri);
+            sidebar->phone_inbox_uri = g_strdup (inbox_uri);
             if (have_phone && inbox_uri != NULL) {
                 cat_iter = add_place (sidebar, PLACES_BUILT_IN,
                                        SECTION_COMPUTER,
@@ -2241,6 +2242,9 @@ drag_data_received_callback (GtkWidget *widget,
                         nolphin_file_unref (source_file);
                     }
                 } else {
+                    if (is_phone_uri (drop_uri)) {
+                        nolphin_phone_ensure_folders ();
+                    }
                     nolphin_file_operations_copy_move (uris, NULL, drop_uri,
                                         real_action, GTK_WIDGET (tree_view),
                                         NULL, NULL);
@@ -2580,6 +2584,11 @@ open_selected_bookmark (NolphinPlacesSidebar *sidebar,
 
 	if (uri != NULL) {
 		DEBUG ("Activating bookmark %s", uri);
+
+		/* ~/Handy und ~/Handy/Vom Handy erst beim Öffnen anlegen */
+		if (is_phone_uri (uri) || g_strcmp0 (uri, sidebar->phone_inbox_uri) == 0) {
+			nolphin_phone_ensure_folders ();
+		}
 
 		location = g_file_new_for_uri (uri);
 		/* Navigate to the clicked location */
@@ -4305,6 +4314,9 @@ nolphin_places_sidebar_init (NolphinPlacesSidebar *sidebar)
 
 	/* Make it easier for theme authors to style the sidebar */
 	gtk_style_context_add_class (style_context, "nolphin-places-sidebar");
+	/* Nolphin ist ein Nemo-Fork: Themes wie Mint-Y gestalten die Orte-Leiste
+	 * nur über die Nemo-Klassen. Ohne sie fehlen z. B. Zeilenabstand und Hover. */
+	gtk_style_context_add_class (style_context, "nemo-places-sidebar");
 
   	/* tree view */
 	tree_view = GTK_TREE_VIEW (nolphin_places_tree_view_new ());
@@ -4554,6 +4566,7 @@ nolphin_places_sidebar_dispose (GObject *object)
 
 	g_clear_handle_id (&sidebar->phone_status_id, g_source_remove);
 	g_clear_pointer (&sidebar->phone_uri, g_free);
+	g_clear_pointer (&sidebar->phone_inbox_uri, g_free);
 	sidebar->window = NULL;
 	sidebar->tree_view = NULL;
 

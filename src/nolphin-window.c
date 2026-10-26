@@ -716,12 +716,83 @@ side_pane_size_allocate_callback (GtkWidget *widget,
 		window->details->sidebar_width_handler_id = 0;
 	}
 
+	/* Rechts liegt anders als bei Nemo noch der Arbeitsbereich. Ist das Fenster zu
+	 * schmal, drückt GtkPaned die Seitenleiste bis an ihre größte mögliche Position.
+	 * Diese erzwungene Breite wird nicht gespeichert; sobald wieder Platz ist, kehrt
+	 * die Seitenleiste zur gemerkten Breite zurück. */
+	if (allocation->width > 1 && window->details->content_paned != NULL) {
+		GtkPaned *paned = GTK_PANED (window->details->content_paned);
+		gint max_position;
+
+		g_object_get (paned, "max-position", &max_position, NULL);
+
+		if (allocation->width < window->details->side_pane_width &&
+		    (window->details->side_pane_clamped ||
+		     gtk_paned_get_position (paned) >= max_position)) {
+			window->details->side_pane_clamped = TRUE;
+			return;
+		}
+
+		window->details->side_pane_clamped = FALSE;
+	}
+
 	if (allocation->width != window->details->side_pane_width &&
 	    allocation->width > 1) {
 		window->details->side_pane_width = allocation->width;
 
 		window->details->sidebar_width_handler_id =
 			g_timeout_add (100, save_sidebar_width_cb, window);
+	}
+}
+
+/* Zieht der Benutzer selbst am Teiler, gilt ab dann seine Breite. */
+static gboolean
+content_paned_button_press_callback (GtkWidget      *widget,
+				     GdkEventButton *event,
+				     gpointer        user_data)
+{
+	NOLPHIN_WINDOW (user_data)->details->side_pane_clamped = FALSE;
+	return GDK_EVENT_PROPAGATE;
+}
+
+static gboolean
+restore_side_pane_width_idle (gpointer user_data)
+{
+	NolphinWindow *window = user_data;
+	gint max_position;
+
+	if (window->details == NULL || window->details->content_paned == NULL ||
+	    !window->details->side_pane_clamped) {
+		return G_SOURCE_REMOVE;
+	}
+
+	g_object_get (window->details->content_paned, "max-position", &max_position, NULL);
+	gtk_paned_set_position (GTK_PANED (window->details->content_paned),
+				MIN (window->details->side_pane_width, max_position));
+	return G_SOURCE_REMOVE;
+}
+
+/* Wird das Fenster wieder breiter, bekommt eine zuvor erzwungen schmalere
+ * Seitenleiste ihre gemerkte Breite zurück (soweit Platz ist). */
+static void
+content_paned_size_allocate_callback (GtkWidget     *widget,
+				      GtkAllocation *allocation,
+				      gpointer       user_data)
+{
+	NolphinWindow *window = user_data;
+	gint max_position, position;
+
+	if (!window->details->side_pane_clamped || window->details->sidebar == NULL) {
+		return;
+	}
+
+	g_object_get (widget, "max-position", &max_position, NULL);
+	position = gtk_paned_get_position (GTK_PANED (widget));
+
+	if (position < max_position && position < window->details->side_pane_width) {
+		/* Nicht mitten in der Größenzuteilung setzen, sonst verwirft GTK den Wert */
+		g_idle_add_full (G_PRIORITY_HIGH_IDLE, restore_side_pane_width_idle,
+				 g_object_ref (window), g_object_unref);
 	}
 }
 
@@ -758,6 +829,17 @@ nolphin_window_set_up_sidebar (NolphinWindow *window)
 			  "size_allocate",
 			  G_CALLBACK (side_pane_size_allocate_callback),
 			  window);
+	if (!g_signal_handler_find (window->details->content_paned, G_SIGNAL_MATCH_FUNC | G_SIGNAL_MATCH_DATA,
+				    0, 0, NULL, content_paned_size_allocate_callback, window)) {
+		g_signal_connect (window->details->content_paned,
+				  "size-allocate",
+				  G_CALLBACK (content_paned_size_allocate_callback),
+				  window);
+		g_signal_connect (window->details->content_paned,
+				  "button-press-event",
+				  G_CALLBACK (content_paned_button_press_callback),
+				  window);
+	}
 
     g_signal_connect_object (NOLPHIN_WINDOW (window), "notify::sidebar-view-id",
                              G_CALLBACK (side_pane_id_changed), window, 0);
@@ -2500,6 +2582,9 @@ nolphin_window_init (NolphinWindow *window)
 	 * without affecting other GTK+ applications.
 	 */
 	gtk_style_context_add_class (gtk_widget_get_style_context (GTK_WIDGET (window)), "nolphin-window");
+	/* Nemo-Klasse zusätzlich, damit Themes (Mint-Y, Mint-X …) ihre Nemo-Regeln
+	 * für Seitenleiste und Bereiche auch auf Nolphin anwenden. */
+	gtk_style_context_add_class (gtk_widget_get_style_context (GTK_WIDGET (window)), "nemo-window");
 
 	window_group = gtk_window_group_new ();
 	gtk_window_group_add_window (window_group, GTK_WINDOW (window));

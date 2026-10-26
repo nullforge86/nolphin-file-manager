@@ -35,7 +35,20 @@ Voraussetzungen: JDK und das Android-SDK (`ANDROID_HOME`, standardmäßig `~/And
 sudo ninja -C build install
 ```
 
-Installationsweg und Paketierung (`debian/`) können sich während der Entwicklung ändern.
+## Debian-Paket bauen (Linux Mint 22.3 / Ubuntu 24.04)
+
+Nolphin wird als **genau ein Paket `nolphin`** gebaut. Es enthält Programm, Daten, Übersetzungen, die Bibliothek `libnolphin-extension`, die GIR-Daten und die Entwicklerdateien für Erweiterungen.
+
+```bash
+sudo apt install devscripts equivs
+sudo mk-build-deps -i -r debian/control     # Build-Abhängigkeiten aus debian/control
+dpkg-buildpackage -us -uc -b                # Tests überspringen: DEB_BUILD_OPTIONS=nocheck
+sudo apt install ../nolphin_*_amd64.deb
+```
+
+Installiert wird nach `/usr/bin/nolphin`, `/usr/lib/<Architektur>/nolphin/`, `/usr/share/nolphin/` und das Schema `org.nolphin.gschema.xml`. Ältere, aufgeteilte Pakete (`nolphin-data`, `libnolphin-extension1`, `libnolphin-extension-dev`, `gir1.2-nolphin-3.0`, `nolphin-dbg`) ersetzt `apt` dabei automatisch.
+
+Deinstallieren: `sudo apt remove nolphin` (Einstellungen in dconf und Dateien im persönlichen Ordner bleiben erhalten).
 
 ---
 

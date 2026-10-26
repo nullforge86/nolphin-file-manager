@@ -1,4 +1,4 @@
-libnolphin-extension.so.1 libnolphin-extension1 #MINVER#
+libnolphin-extension.so.1 nolphin #MINVER#
  nolphin_column_get_type@Base 5.0.3
  nolphin_column_new2@Base 5.0.3
  nolphin_column_new@Base 5.0.3

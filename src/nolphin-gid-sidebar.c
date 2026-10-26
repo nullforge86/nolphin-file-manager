@@ -319,14 +319,28 @@ nolphin_gid_sidebar_new (NolphinWindow *window)
 
 	sb->empty_label = gtk_label_new (_("Noch keine Projekte."));
 	gtk_widget_set_halign (sb->empty_label, GTK_ALIGN_START);
+	gtk_label_set_ellipsize (GTK_LABEL (sb->empty_label), PANGO_ELLIPSIZE_END);
 	gtk_style_context_add_class (gtk_widget_get_style_context (sb->empty_label), "dim-label");
 	gtk_box_pack_start (GTK_BOX (content), sb->empty_label, FALSE, FALSE, 0);
 
-	add = gtk_button_new_with_label (_("Projekt hinzufügen …"));
-	gtk_button_set_image (GTK_BUTTON (add), gtk_image_new_from_icon_name ("list-add-symbolic", GTK_ICON_SIZE_BUTTON));
-	gtk_button_set_always_show_image (GTK_BUTTON (add), TRUE);
+	/* Beschriftung kürzbar, damit die Seitenleiste wie bei Nemo bis 140 px
+	 * schmal gezogen werden kann (gtk_button_set_image erlaubt das nicht). */
+	add = gtk_button_new ();
+	{
+		GtkWidget *box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 4);
+		GtkWidget *label = gtk_label_new (_("Projekt hinzufügen …"));
+
+		gtk_label_set_ellipsize (GTK_LABEL (label), PANGO_ELLIPSIZE_END);
+		gtk_box_pack_start (GTK_BOX (box),
+				    gtk_image_new_from_icon_name ("list-add-symbolic", GTK_ICON_SIZE_BUTTON),
+				    FALSE, FALSE, 0);
+		gtk_box_pack_start (GTK_BOX (box), label, TRUE, TRUE, 0);
+		gtk_container_add (GTK_CONTAINER (add), box);
+		gtk_widget_show_all (box);
+	}
+	gtk_widget_set_tooltip_text (add, _("Projekt hinzufügen …"));
 	gtk_button_set_relief (GTK_BUTTON (add), GTK_RELIEF_NONE);
-	gtk_widget_set_halign (add, GTK_ALIGN_START);
+	gtk_widget_set_halign (add, GTK_ALIGN_FILL);
 	g_signal_connect (add, "clicked", G_CALLBACK (on_add_clicked), sb);
 	gtk_box_pack_start (GTK_BOX (content), add, FALSE, FALSE, 0);
 
