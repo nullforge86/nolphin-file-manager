@@ -1065,6 +1065,7 @@ nolphin_window_pane_init (NolphinWindowPane *pane)
 
 	context = gtk_widget_get_style_context (GTK_WIDGET (pane));
 	gtk_style_context_add_class (context, "nolphin-window-pane");
+	gtk_style_context_add_class (context, "nemo-window-pane");  /* für Themes mit Nemo-Regeln */
 }
 
 NolphinWindowPane *
@@ -1091,8 +1092,10 @@ nolphin_window_pane_set_active_style (NolphinWindowPane *pane,
 
 	if (is_active) {
 		gtk_style_context_remove_class (style, "nolphin-inactive-pane");
+		gtk_style_context_remove_class (style, "nemo-inactive-pane");
 	} else {
 		gtk_style_context_add_class (style, "nolphin-inactive-pane");
+		gtk_style_context_add_class (style, "nemo-inactive-pane");
 	}
 
 	gtk_widget_reset_style (GTK_WIDGET (pane));

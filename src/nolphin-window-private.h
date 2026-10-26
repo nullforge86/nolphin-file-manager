@@ -79,6 +79,7 @@ struct NolphinWindowDetails
         
         /* Side Pane */
         int side_pane_width;
+        gboolean side_pane_clamped;  /* Seitenleiste wegen Platzmangel schmaler als gespeichert */
         GtkWidget *sidebar;
         gchar *sidebar_id;
 
