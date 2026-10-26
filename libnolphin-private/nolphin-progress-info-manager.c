@@ -129,8 +129,11 @@ nolphin_progress_info_manager_add_new_info (NolphinProgressInfoManager *self,
 	self->priv->progress_infos =
 		g_list_prepend (self->priv->progress_infos, g_object_ref (info));
 
-	g_signal_connect (info, "finished",
-			  G_CALLBACK (progress_info_finished_cb), self);
+	/* connect_object: ohne Fenster-Handler (z. B. in Tests) wird der
+	 * Manager vor dem Vorgang freigegeben; der Handler darf ihn dann
+	 * nicht mehr aufrufen. */
+	g_signal_connect_object (info, "finished",
+				 G_CALLBACK (progress_info_finished_cb), self, 0);
 
 	g_signal_emit (self, signals[NEW_PROGRESS_INFO], 0, info);
 }
