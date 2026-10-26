@@ -86,6 +86,7 @@ nolphin_private_sources = [
   'nolphin-signaller.c',
   'nolphin-thumbnailer.c',
   'nolphin-thumbnails.c',
+  'nolphin-tool-progress.c',
   'nolphin-trash-cleanup.c',
   'nolphin-trash-monitor.c',
   'nolphin-tree-view-drag-dest.c',

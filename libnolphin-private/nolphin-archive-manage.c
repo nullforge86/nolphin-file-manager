@@ -6,6 +6,7 @@
 #include <config.h>
 
 #include "nolphin-archive-manage.h"
+#include "nolphin-tool-progress.h"
 
 #include <glib/gi18n.h>
 #include <stdio.h>
@@ -161,10 +162,23 @@ run_sync (const gchar * const *argv, const gchar *cwd, gchar **out_stdout, GErro
 	{
 		/* Leere Eingabe: schließt stdin sofort, damit kein Werkzeug auf ein Passwort wartet. */
 		GBytes *empty = g_bytes_new_static ("", 0);
-		gboolean done = g_subprocess_communicate (proc, empty, NULL, &out, &err, error);
+		NolphinToolProgress *progress = nolphin_tool_progress_get_thread ();
+		gboolean done;
+
+		/* Anhalten/Abbrechen im Fenster „Dateivorgänge“ wirkt auf diesen Prozess. */
+		nolphin_tool_progress_set_subprocess (progress, proc);
+		done = g_subprocess_communicate (proc, empty, NULL, &out, &err, error);
+		nolphin_tool_progress_set_subprocess (progress, NULL);
 
 		g_bytes_unref (empty);
 		if (!done) {
+			g_object_unref (proc);
+			return FALSE;
+		}
+		if (nolphin_tool_progress_is_cancelled (progress)) {
+			g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_CANCELLED, _("Vom Benutzer abgebrochen."));
+			g_clear_pointer (&out, g_bytes_unref);
+			g_clear_pointer (&err, g_bytes_unref);
 			g_object_unref (proc);
 			return FALSE;
 		}
@@ -856,9 +870,8 @@ do_extract (Job *job, GError **error)
 /* --- Thread-Einstieg und öffentliche API ---------------------------------- */
 
 static void
-job_thread (GTask *task, gpointer source, gpointer task_data, GCancellable *cancellable)
+job_run (GTask *task, Job *job)
 {
-	Job *job = task_data;
 	GError *error = NULL;
 	FormatClass c = format_class (job->format);
 
@@ -895,7 +908,51 @@ job_thread (GTask *task, gpointer source, gpointer task_data, GCancellable *canc
 		break;
 	}
 
+	if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+		nolphin_tool_progress_set_had_error (nolphin_tool_progress_get (task));
+	}
 	g_task_return_error (task, error);
+}
+
+static void
+job_thread (GTask *task, gpointer source, gpointer task_data, GCancellable *cancellable)
+{
+	/* run_sync() findet die Fortschrittsanzeige über den Thread. */
+	nolphin_tool_progress_set_thread (nolphin_tool_progress_get (task));
+	job_run (task, task_data);
+	nolphin_tool_progress_set_thread (NULL);
+}
+
+/* Ändernde Vorgänge erscheinen bei längerer Dauer im Fenster
+ * „Dateivorgänge“; das Auflisten bleibt still, es füllt nur die
+ * Ansicht des Archiv-Managers. */
+static void
+run_job_with_progress (GTask *task, Job *job, GCancellable *cancellable)
+{
+	gchar *archive_name = g_path_get_basename (job->archive_path);
+	gchar *status;
+	gchar *details = NULL;
+
+	switch (job->op) {
+	case OP_ADD:
+		status = g_strdup_printf (_("Dateien werden zu „%s“ hinzugefügt"), archive_name);
+		break;
+	case OP_REMOVE:
+		status = g_strdup_printf (_("Einträge werden aus „%s“ entfernt"), archive_name);
+		break;
+	case OP_EXTRACT:
+	default:
+		status = g_strdup_printf (_("Einträge aus „%s“ werden entpackt"), archive_name);
+		details = g_strdup_printf (_("nach %s"), job->destination);
+		break;
+	}
+
+	nolphin_tool_progress_attach (task, cancellable, status, details);
+	g_task_run_in_thread (task, job_thread);
+
+	g_free (details);
+	g_free (status);
+	g_free (archive_name);
 }
 
 static GTask *
@@ -981,7 +1038,7 @@ nolphin_archive_add_files_async (GFile *archive, GList *sources, const gchar *ta
 	for (l = sources; l != NULL; l = l->next) {
 		add_stage_item (job, l->data, target_dir, NULL);
 	}
-	g_task_run_in_thread (task, job_thread);
+	run_job_with_progress (task, job, cancellable);
 	g_object_unref (task);
 }
 
@@ -1002,7 +1059,7 @@ nolphin_archive_replace_entry_async (GFile *archive, const gchar *entry_path, GF
 	add_stage_item (job, source, g_strcmp0 (dir, ".") == 0 ? NULL : dir, base);
 	g_free (dir);
 	g_free (base);
-	g_task_run_in_thread (task, job_thread);
+	run_job_with_progress (task, job, cancellable);
 	g_object_unref (task);
 }
 
@@ -1029,7 +1086,7 @@ nolphin_archive_remove_entries_async (GFile *archive, GList *entry_paths,
 		return;
 	}
 	job->names = copy_names (entry_paths);
-	g_task_run_in_thread (task, job_thread);
+	run_job_with_progress (task, job, cancellable);
 	g_object_unref (task);
 }
 
@@ -1052,7 +1109,7 @@ nolphin_archive_extract_entries_async (GFile *archive, GList *entry_paths, GFile
 		g_object_unref (task);
 		return;
 	}
-	g_task_run_in_thread (task, job_thread);
+	run_job_with_progress (task, job, cancellable);
 	g_object_unref (task);
 }
 

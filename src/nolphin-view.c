@@ -7715,7 +7715,10 @@ extract_here_finished_cb (GObject *source, GAsyncResult *result, gpointer user_d
     GError *error = NULL;
     gboolean success = nolphin_archive_extract_finish (result, &error);
 
-    send_archive_notification (_("Entpacken"), success, error ? error->message : NULL);
+    /* Im Fenster „Dateivorgänge“ abgebrochen: keine Fehlermeldung. */
+    if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        send_archive_notification (_("Entpacken"), success, error ? error->message : NULL);
+    }
     g_clear_error (&error);
 }
 
@@ -8142,7 +8145,10 @@ test_archive_finished_cb (GObject *source, GAsyncResult *result, gpointer user_d
     GError *error = NULL;
     gboolean success = nolphin_archive_test_finish (result, &error);
 
-    send_archive_notification (_("Archiv prüfen"), success, error ? error->message : NULL);
+    /* Im Fenster „Dateivorgänge“ abgebrochen: keine Fehlermeldung. */
+    if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        send_archive_notification (_("Archiv prüfen"), success, error ? error->message : NULL);
+    }
     g_clear_error (&error);
 }
 
@@ -8496,7 +8502,9 @@ encrypt_folder_compressed_cb (GObject *source, GAsyncResult *result, gpointer us
     GError *error = NULL;
 
     if (!nolphin_archive_compress_finish (result, &error)) {
-        send_encryption_notification (_("Ordner verschlüsseln"), FALSE, error->message);
+        if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+            send_encryption_notification (_("Ordner verschlüsseln"), FALSE, error->message);
+        }
         g_clear_error (&error);
         encrypt_folder_data_free (data);
         return;
@@ -8903,8 +8911,14 @@ git_sync_ready_cb (GObject *source, GAsyncResult *result, gpointer user_data)
     gboolean apply = GPOINTER_TO_INT (user_data);
     GError *error = NULL;
     gchar *text = nolphin_git_sync_finish (result, &error);
-    GNotification *notification = g_notification_new (apply ? _("Git: Synchronisieren") : _("Git: Abgleich"));
+    GNotification *notification;
 
+    if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        g_clear_error (&error);
+        return;
+    }
+
+    notification = g_notification_new (apply ? _("Git: Synchronisieren") : _("Git: Abgleich"));
     if (text != NULL) {
         g_notification_set_body (notification, text);
     } else {
@@ -8942,7 +8956,10 @@ git_clone_ready_cb (GObject *source, GAsyncResult *result, gpointer user_data)
     GError *error = NULL;
     gboolean success = nolphin_git_clone_finish (result, &error);
 
-    send_archive_notification (_("Git: Repository klonen"), success, error ? error->message : NULL);
+    /* Im Fenster „Dateivorgänge“ abgebrochen: keine Fehlermeldung. */
+    if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        send_archive_notification (_("Git: Repository klonen"), success, error ? error->message : NULL);
+    }
     g_clear_error (&error);
 }
 

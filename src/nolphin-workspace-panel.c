@@ -173,6 +173,8 @@ archive_compress_finished_cb (GObject *source, GAsyncResult *result, gpointer us
 
 	if (success) {
 		gtk_label_set_text (GTK_LABEL (data->status_label), _("Archiv wurde erstellt."));
+	} else if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+		gtk_label_set_text (GTK_LABEL (data->status_label), _("Abgebrochen."));
 	} else {
 		gchar *msg = g_strdup_printf (_("Fehlgeschlagen: %s"), error != NULL ? error->message : "");
 		gtk_label_set_text (GTK_LABEL (data->status_label), msg);
@@ -2175,6 +2177,11 @@ am_op_ready (GObject *source, GAsyncResult *result, gpointer user_data)
 	if (ok) {
 		archive_manager_reload (d);
 		gtk_label_set_text (GTK_LABEL (d->status_label), _("Fertig."));
+	} else if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+		/* Im Fenster „Dateivorgänge“ abgebrochen: kein Fehlerdialog. */
+		am_set_busy (d, FALSE, _("Abgebrochen."));
+		g_clear_error (&error);
+		archive_manager_reload (d);
 	} else {
 		am_set_busy (d, FALSE, error != NULL ? error->message : _("Fehlgeschlagen."));
 		if (error != NULL) {

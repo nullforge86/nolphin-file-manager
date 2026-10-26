@@ -36,6 +36,15 @@ test('Archive test',
   args: []
 )
 
+test('Tool progress test',
+  executable('test-nolphin-tool-progress',
+    [ 'test-nolphin-tool-progress.c' ],
+    include_directories: [ rootInclude, ],
+    dependencies: [ gtk, nolphin_private ],
+  ),
+  args: []
+)
+
 test('CAD test',
   executable('test-nolphin-cad',
     [ 'test-nolphin-cad.c' ],

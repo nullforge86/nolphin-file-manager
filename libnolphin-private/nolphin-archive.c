@@ -21,8 +21,10 @@
 #include <config.h>
 
 #include "nolphin-archive.h"
+#include "nolphin-tool-progress.h"
 
 #include <glib/gi18n.h>
+#include <glib/gstdio.h>
 
 typedef struct {
     const gchar *label;
@@ -260,15 +262,29 @@ subprocess_wait_cb (GObject *source, GAsyncResult *result, gpointer user_data)
 {
     GSubprocess *subprocess = G_SUBPROCESS (source);
     GTask *task = G_TASK (user_data);
+    NolphinToolProgress *progress = nolphin_tool_progress_get (task);
     GError *error = NULL;
 
+    nolphin_tool_progress_set_subprocess (progress, NULL);
+
     if (!g_subprocess_wait_finish (subprocess, result, &error)) {
+        nolphin_tool_progress_set_had_error (progress);
         g_task_return_error (task, error);
         g_object_unref (task);
         return;
     }
 
-    if (g_subprocess_get_successful (subprocess)) {
+    if (nolphin_tool_progress_is_cancelled (progress)) {
+        /* Abgebrochen: ein halb geschriebenes Archiv nicht liegen lassen
+         * (nur wenn es vorher nicht existierte, siehe run_tool_async()). */
+        const gchar *cleanup_path = g_object_get_data (G_OBJECT (task), "cleanup-path");
+
+        if (cleanup_path != NULL) {
+            g_unlink (cleanup_path);
+        }
+        g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_CANCELLED,
+                                 "%s", _("Vom Benutzer abgebrochen."));
+    } else if (g_subprocess_get_successful (subprocess)) {
         g_task_return_boolean (task, TRUE);
     } else {
         gchar *stderr_buf = NULL;
@@ -290,6 +306,7 @@ subprocess_wait_cb (GObject *source, GAsyncResult *result, gpointer user_data)
             }
         }
 
+        nolphin_tool_progress_set_had_error (progress);
         g_task_return_new_error (task, NOLPHIN_ARCHIVE_ERROR, NOLPHIN_ARCHIVE_ERROR_TOOL_FAILED,
                                  "%s",
                                  (stderr_buf != NULL && stderr_buf[0] != '\0') ?
@@ -309,18 +326,34 @@ subprocess_wait_cb (GObject *source, GAsyncResult *result, gpointer user_data)
  * file, e.g. tar/zip/7z); otherwise the tool's stdout is redirected
  * into this path - used for the single-file gzip/bzip2/xz/zstd/lz4
  * tools, which write the compressed/decompressed stream to stdout
- * rather than taking a destination-path argument. */
+ * rather than taking a destination-path argument.
+ *
+ * @status/@details: Text im Fenster „Dateivorgänge“, das bei längeren
+ * Vorgängen erscheint (siehe nolphin-tool-progress.h). Dort lässt sich
+ * der Vorgang auch anhalten und abbrechen.
+ *
+ * @output_path: NULL oder die Datei, die der Vorgang neu anlegt; wird
+ * beim Abbrechen gelöscht, falls sie vorher noch nicht existierte. */
 static void
 run_tool_async (gchar        **argv,
                 const gchar   *working_directory,
                 const gchar   *stdout_path,
+                const gchar   *output_path,
+                const gchar   *status,
+                const gchar   *details,
                 GCancellable  *cancellable,
                 GTask         *task)
 {
     GSubprocessLauncher *launcher;
     GSubprocessFlags flags;
     GSubprocess *subprocess;
+    NolphinToolProgress *progress;
     GError *error = NULL;
+
+    if (output_path != NULL && !g_file_test (output_path, G_FILE_TEST_EXISTS)) {
+        g_object_set_data_full (G_OBJECT (task), "cleanup-path", g_strdup (output_path), g_free);
+    }
+    progress = nolphin_tool_progress_attach (task, cancellable, status, details);
 
     flags = G_SUBPROCESS_FLAGS_STDERR_PIPE;
     flags |= (stdout_path != NULL) ? 0 : G_SUBPROCESS_FLAGS_STDOUT_SILENCE;
@@ -337,12 +370,16 @@ run_tool_async (gchar        **argv,
     g_object_unref (launcher);
 
     if (subprocess == NULL) {
+        nolphin_tool_progress_set_had_error (progress);
         g_task_return_error (task, error);
         g_object_unref (task);
         return;
     }
 
-    g_subprocess_wait_async (subprocess, cancellable, subprocess_wait_cb, task);
+    /* Kein Cancellable: beim Abbrechen beendet nolphin-tool-progress.c
+     * den Prozess, und erst nach dessen Ende wird der Task beendet. */
+    nolphin_tool_progress_set_subprocess (progress, subprocess);
+    g_subprocess_wait_async (subprocess, NULL, subprocess_wait_cb, task);
     g_object_unref (subprocess);
 }
 
@@ -624,9 +661,24 @@ nolphin_archive_compress_async (GList                *sources,
     }
     g_ptr_array_add (argv, NULL);
 
-    run_tool_async ((gchar **) argv->pdata, parent_path,
-                    nolphin_archive_format_is_single_file (format) ? dest_path : NULL,
-                    cancellable, task);
+    {
+        gchar *dest_name = g_path_get_basename (dest_path);
+        gchar *status = g_strdup_printf (_("„%s“ wird erstellt"), dest_name);
+        gchar *details = g_strdup_printf (ngettext ("%u Objekt wird als %s komprimiert",
+                                                    "%u Objekte werden als %s komprimiert",
+                                                    g_list_length (sources)),
+                                          g_list_length (sources), format_info[format].label);
+
+        /* Teilarchive (Name.001 …) legt das Werkzeug unter anderen Namen
+         * an, darum dort kein Aufräumen über den Zielpfad. */
+        run_tool_async ((gchar **) argv->pdata, parent_path,
+                        nolphin_archive_format_is_single_file (format) ? dest_path : NULL,
+                        split_size_mb > 0 ? NULL : dest_path,
+                        status, details, cancellable, task);
+        g_free (details);
+        g_free (status);
+        g_free (dest_name);
+    }
 
     g_ptr_array_free (argv, TRUE);
     g_free (parent_path);
@@ -800,7 +852,17 @@ nolphin_archive_extract_async (GFile               *archive_file,
         }
         g_ptr_array_add (argv, NULL);
 
-        run_tool_async ((gchar **) argv->pdata, NULL, single_file_out_path, cancellable, task);
+        {
+            gchar *archive_name = g_path_get_basename (archive_path);
+            gchar *status = g_strdup_printf (_("„%s“ wird entpackt"), archive_name);
+            gchar *details = g_strdup_printf (_("nach %s"), dest_path);
+
+            run_tool_async ((gchar **) argv->pdata, NULL, single_file_out_path, single_file_out_path,
+                            status, details, cancellable, task);
+            g_free (details);
+            g_free (status);
+            g_free (archive_name);
+        }
 
         g_free (single_file_out_path);
     }
@@ -926,7 +988,15 @@ nolphin_archive_test_async (GFile               *archive_file,
     }
     g_ptr_array_add (argv, NULL);
 
-    run_tool_async ((gchar **) argv->pdata, NULL, NULL, cancellable, task);
+    {
+        gchar *archive_name = g_path_get_basename (archive_path);
+        gchar *status = g_strdup_printf (_("„%s“ wird geprüft"), archive_name);
+
+        run_tool_async ((gchar **) argv->pdata, NULL, NULL, NULL,
+                        status, format_info[format].label, cancellable, task);
+        g_free (status);
+        g_free (archive_name);
+    }
 
     g_ptr_array_free (argv, TRUE);
     g_free (archive_path);

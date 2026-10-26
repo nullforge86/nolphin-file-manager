@@ -21,6 +21,7 @@
 #include <config.h>
 
 #include "nolphin-git.h"
+#include "nolphin-tool-progress.h"
 
 #include <glib/gi18n.h>
 #include <stdarg.h>
@@ -414,17 +415,30 @@ simple_bool_communicate_cb (GObject *source, GAsyncResult *result, gpointer user
 {
     GTask *task = user_data;
     GSubprocess *subprocess = G_SUBPROCESS (source);
+    NolphinToolProgress *progress = nolphin_tool_progress_get (task); /* nur beim Klonen */
     GError *error = NULL;
     gchar *stderr_buf = NULL;
 
+    nolphin_tool_progress_set_subprocess (progress, NULL);
+
     if (!g_subprocess_communicate_utf8_finish (subprocess, result, NULL, &stderr_buf, &error)) {
+        nolphin_tool_progress_set_had_error (progress);
         g_task_return_error (task, error);
         g_object_unref (task);
         g_free (stderr_buf);
         return;
     }
 
+    if (nolphin_tool_progress_is_cancelled (progress)) {
+        g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_CANCELLED,
+                                 "%s", _("Vom Benutzer abgebrochen."));
+        g_object_unref (task);
+        g_free (stderr_buf);
+        return;
+    }
+
     if (!g_subprocess_get_successful (subprocess)) {
+        nolphin_tool_progress_set_had_error (progress);
         gchar *detail = (stderr_buf != NULL) ? g_strstrip (g_strdup (stderr_buf)) : NULL;
         g_task_return_new_error (task, NOLPHIN_GIT_ERROR, NOLPHIN_GIT_ERROR_TOOL_FAILED,
                                  "%s%s%s",
@@ -663,6 +677,34 @@ nolphin_git_commit_finish (GAsyncResult *result, GError **error)
 
 static gboolean git_run_blocking (const gchar *repo_path, gchar **out, gchar **err_text, ...);
 
+/* Netzwerkvorgänge (Pull, Push, Synchronisieren) erscheinen bei längerer
+ * Dauer im Fenster „Dateivorgänge“, wie Kopiervorgänge. */
+static void
+git_progress_thread (GTask *task, gpointer source, gpointer task_data, GCancellable *cancellable)
+{
+    NolphinToolProgress *progress = nolphin_tool_progress_get (task);
+    GTaskThreadFunc func = (GTaskThreadFunc) g_object_get_data (G_OBJECT (task), "thread-func");
+
+    nolphin_tool_progress_set_thread (progress);
+    func (task, source, task_data, cancellable);
+    nolphin_tool_progress_set_thread (NULL);
+
+    /* Innerhalb des Threads zurückgegebene Ergebnisse liefert GTask erst
+     * nach dem Ende dieser Funktion aus, der Fehler ist hier noch lesbar. */
+    if (g_task_had_error (task) && !nolphin_tool_progress_is_cancelled (progress)) {
+        nolphin_tool_progress_set_had_error (progress);
+    }
+}
+
+static void
+git_run_in_thread_with_progress (GTask *task, GTaskThreadFunc func, GCancellable *cancellable,
+                                 const gchar *status, const gchar *details)
+{
+    nolphin_tool_progress_attach (task, cancellable, status, details);
+    g_object_set_data (G_OBJECT (task), "thread-func", (gpointer) func);
+    g_task_run_in_thread (task, git_progress_thread);
+}
+
 /* Prüft, ob der aktuelle Zweig einen brauchbaren Server-Zweig hat, und
  * verbindet ihn wenn möglich selbst. Der Nutzer soll dafür kein
  * "git branch --set-upstream-to" im Terminal tippen müssen.
@@ -814,7 +856,10 @@ git_pull_push_async (GFile *repo_root, gboolean is_push, GCancellable *cancellab
 
     g_object_set_data_full (G_OBJECT (task), "repo-path", repo_path, g_free);
     g_object_set_data (G_OBJECT (task), "push", GINT_TO_POINTER (is_push));
-    g_task_run_in_thread (task, git_pull_push_thread);
+    git_run_in_thread_with_progress (task, git_pull_push_thread, cancellable,
+                                     is_push ? _("Änderungen werden zum Server hochgeladen")
+                                             : _("Änderungen werden vom Server geholt"),
+                                     repo_path);
     g_object_unref (task);
 }
 
@@ -1021,15 +1066,18 @@ nolphin_git_remote_set_url_finish (GAsyncResult *result, GError **error)
     return g_task_propagate_boolean (G_TASK (result), error);
 }
 
-/* Führt git synchron aus (nur aus einem Worker-Thread aufrufen). */
+/* Führt git synchron aus (nur aus einem Worker-Thread aufrufen). Läuft der
+ * Thread mit einer Fortschrittsanzeige (git_run_in_thread_with_progress),
+ * lässt sich der Prozess dort anhalten und abbrechen. */
 static gboolean
 git_run_blocking (const gchar *repo_path, gchar **out, gchar **err_text, ...)
 {
     GPtrArray *argv = g_ptr_array_new_with_free_func (g_free);
-    gchar **envp = g_get_environ ();
+    GSubprocessLauncher *launcher;
+    GSubprocess *subprocess;
+    NolphinToolProgress *progress = nolphin_tool_progress_get_thread ();
     gchar *std_out = NULL, *std_err = NULL;
-    gint status = 0;
-    gboolean ok;
+    gboolean ok = FALSE;
     va_list ap;
     const gchar *arg;
 
@@ -1043,12 +1091,25 @@ git_run_blocking (const gchar *repo_path, gchar **out, gchar **err_text, ...)
     va_end (ap);
     g_ptr_array_add (argv, NULL);
 
-    envp = g_environ_setenv (envp, "GIT_TERMINAL_PROMPT", "0", TRUE);
-    envp = g_environ_setenv (envp, "GIT_ASKPASS", "", TRUE);
+    launcher = g_subprocess_launcher_new (G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE);
+    g_subprocess_launcher_setenv (launcher, "GIT_TERMINAL_PROMPT", "0", TRUE);
+    g_subprocess_launcher_setenv (launcher, "GIT_ASKPASS", "", TRUE);
+    subprocess = g_subprocess_launcher_spawnv (launcher, (const gchar * const *) argv->pdata, NULL);
+    g_object_unref (launcher);
 
-    ok = g_spawn_sync (NULL, (gchar **) argv->pdata, envp, G_SPAWN_SEARCH_PATH, NULL, NULL,
-                       &std_out, &std_err, &status, NULL)
-         && g_spawn_check_exit_status (status, NULL);
+    if (subprocess != NULL) {
+        nolphin_tool_progress_set_subprocess (progress, subprocess);
+        ok = g_subprocess_communicate_utf8 (subprocess, NULL, NULL, &std_out, &std_err, NULL)
+             && g_subprocess_get_successful (subprocess);
+        nolphin_tool_progress_set_subprocess (progress, NULL);
+        g_object_unref (subprocess);
+    }
+
+    if (nolphin_tool_progress_is_cancelled (progress)) {
+        ok = FALSE;
+        g_free (std_err);
+        std_err = g_strdup (_("Vom Benutzer abgebrochen."));
+    }
 
     if (out != NULL) {
         *out = std_out;
@@ -1061,7 +1122,6 @@ git_run_blocking (const gchar *repo_path, gchar **out, gchar **err_text, ...)
         g_free (std_err);
     }
 
-    g_strfreev (envp);
     g_ptr_array_free (argv, TRUE);
     return ok;
 }
@@ -1199,7 +1259,10 @@ nolphin_git_sync_async (GFile *repo_root, gboolean apply,
 
     g_object_set_data_full (G_OBJECT (task), "repo-path", repo_path, g_free);
     g_object_set_data (G_OBJECT (task), "apply", GINT_TO_POINTER (apply));
-    g_task_run_in_thread (task, git_sync_thread);
+    git_run_in_thread_with_progress (task, git_sync_thread, cancellable,
+                                     apply ? _("Mit dem Server synchronisieren")
+                                           : _("Mit dem Server abgleichen"),
+                                     repo_path);
     g_object_unref (task);
 }
 
@@ -1217,6 +1280,7 @@ nolphin_git_clone_async (GFile *parent_dir, const gchar *url,
     GTask *task;
     gchar *dir_path;
     GSubprocess *subprocess;
+    NolphinToolProgress *progress;
     GError *error = NULL;
 
     g_return_if_fail (G_IS_FILE (parent_dir));
@@ -1241,7 +1305,11 @@ nolphin_git_clone_async (GFile *parent_dir, const gchar *url,
         return;
     }
 
-    g_subprocess_communicate_utf8_async (subprocess, NULL, cancellable, simple_bool_communicate_cb, task);
+    /* Kein Cancellable für communicate: Abbrechen beendet den Prozess
+     * (nolphin-tool-progress.c), danach endet der Task regulär. */
+    progress = nolphin_tool_progress_attach (task, cancellable, _("Repository wird heruntergeladen"), url);
+    nolphin_tool_progress_set_subprocess (progress, subprocess);
+    g_subprocess_communicate_utf8_async (subprocess, NULL, NULL, simple_bool_communicate_cb, task);
     g_object_unref (subprocess);
 }
 
