@@ -82,7 +82,6 @@ Recommends:
 Suggests: eog, evince | pdf-viewer, totem | mp3-decoder, xdg-user-dirs
 Provides:
  gir1.2-nolphin-3.0 (= ${binary:Version}),
- libnolphin-extension-dev (= ${binary:Version}),
  libnolphin-extension1 (= ${binary:Version}),
  nolphin-data (= ${binary:Version}),
  ${gir:Provides},
@@ -105,5 +104,5 @@ Description: file manager and graphical shell for Cinnamon
  desktop. It works on local and remote filesystems.
  .
  This single package contains the program, its data files and translations,
- the libnolphin-extension runtime library, its GObject introspection data
- and the development files for writing Nolphin extensions.
+ the libnolphin-extension runtime library and its GObject introspection
+ data. It is built for Linux Mint.

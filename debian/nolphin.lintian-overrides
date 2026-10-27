@@ -3,9 +3,6 @@
 nolphin: desktop-entry-contains-unknown-key AutostartCondition [usr/share/applications/nolphin-autostart.desktop:*]
 
 # Nolphin wird bewusst als genau ein Paket gebaut: Bibliothek, Typelib,
-# GIR-Daten und Entwicklerdateien liegen im Paket nolphin selbst.
+# Typelib liegen im Paket nolphin selbst.
 nolphin: package-name-doesnt-match-sonames libnolphin-extension1
-nolphin: link-to-shared-library-in-wrong-package *
-nolphin: gir-section-not-libdevel misc [usr/share/gir-1.0/Nolphin-3.0.gir]
-nolphin: gir-missing-typelib-dependency gir1.2-nolphin-3.0 [usr/share/gir-1.0/Nolphin-3.0.gir]
 nolphin: typelib-section-not-introspection misc [usr/lib/*/girepository-1.0/Nolphin-3.0.typelib]

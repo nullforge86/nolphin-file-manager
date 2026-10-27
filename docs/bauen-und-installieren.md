@@ -37,14 +37,19 @@ sudo ninja -C build install
 
 ## Debian-Paket bauen (Linux Mint 22.3 / Ubuntu 24.04)
 
-Nolphin wird als **genau ein Paket `nolphin`** gebaut. Es enthält Programm, Daten, Übersetzungen, die Bibliothek `libnolphin-extension`, die GIR-Daten und die Entwicklerdateien für Erweiterungen.
+Nolphin wird als **genau ein Paket `nolphin`** gebaut. Es enthält Programm, Daten, Übersetzungen, die Bibliothek `libnolphin-extension` und ihre Typelib. Entwicklerdateien (Header, `.pc`, `.gir`) sind nicht enthalten, damit das Paket keine `-dev`-Pakete auf das System zieht.
+
+**Nur auf Linux Mint bauen.** Die Cinnamon-Bibliothek heißt bei Mint `libcinnamon-desktop4` (6.6), bei Ubuntu `libcinnamon-desktop4t64` (6.0). Ein auf Ubuntu gebautes Paket zieht auf Mint die ältere Ubuntu-Bibliothek nach, ersetzt damit die Cinnamon-Bibliothek, und der Desktop startet nicht mehr. Deshalb bricht `debian/rules` ab, wenn `libcinnamon-desktop4t64` installiert ist, und `debian/check-depends` verweigert jedes Paket, das `-dev`- oder Ubuntu-Cinnamon-Pakete voraussetzt.
 
 ```bash
 sudo apt install devscripts equivs
 sudo mk-build-deps -i -r debian/control     # Build-Abhängigkeiten aus debian/control
 dpkg-buildpackage -us -uc -b                # Tests überspringen: DEB_BUILD_OPTIONS=nocheck
-sudo apt install ../nolphin_*_amd64.deb
+utils/paket-pruefen.sh ../nolphin_*_amd64.deb   # prüft, ändert nichts
+sudo apt install ../nolphin_*_amd64.deb     # nur wenn die Prüfung "keine Risiken" meldet
 ```
+
+`utils/paket-pruefen.sh` zeigt Mint-Version, Ubuntu-Basis und Architektur, die Felder `Depends`, `Conflicts`, `Breaks`, `Replaces` und `Provides`, Dateien, die schon anderen Paketen gehören, und das Ergebnis von `apt-get -s install`. Würde apt Desktop-Komponenten (Cinnamon, Muffin, GTK, GLib, XApp) ändern oder andere Pakete entfernen, meldet es ein Risiko und endet mit Rückgabewert 1.
 
 Installiert wird nach `/usr/bin/nolphin`, `/usr/lib/<Architektur>/nolphin/`, `/usr/share/nolphin/` und das Schema `org.nolphin.gschema.xml`. Ältere, aufgeteilte Pakete (`nolphin-data`, `libnolphin-extension1`, `libnolphin-extension-dev`, `gir1.2-nolphin-3.0`, `nolphin-dbg`) ersetzt `apt` dabei automatisch.
 

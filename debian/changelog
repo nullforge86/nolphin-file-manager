@@ -1,3 +1,16 @@
+nolphin (6.7.7+nolphin7) unstable; urgency=high
+
+  * Paketierung: Der Paketbau bricht außerhalb von Linux Mint ab. Ein auf
+    Ubuntu gebautes Paket hing von libcinnamon-desktop4t64 6.0 ab und hat
+    auf Mint die Cinnamon-Bibliothek 6.6 ersetzt (schwarzer Desktop).
+  * Paketierung: Keine Entwicklerdateien mehr im Paket; dadurch keine
+    Abhängigkeit mehr auf gir1.2-gio-2.0-dev und gir1.2-gtk-3.0-dev.
+  * Paketierung: debian/check-depends verweigert Pakete, die -dev- oder
+    Ubuntu-Cinnamon-Pakete (…t64) voraussetzen.
+  * utils/paket-pruefen.sh: prüft eine .deb vor der Installation.
+
+ -- Kay Siebke <kaysiebke@gmail.com>  Tue, 27 Oct 2026 12:00:00 +0100
+
 nolphin (6.7.7+nolphin6) unstable; urgency=medium
 
   * Paketierung: Nolphin wird wie gewünscht als genau ein Paket „nolphin“

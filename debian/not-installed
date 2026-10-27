@@ -3,3 +3,9 @@ usr/lib/*/libnolphin-extension.la
 # False positives
 usr/share/man/man1/nolphin.1
 usr/share/man/man1/nolphin-connect-server.1
+# Entwicklerdateien für Erweiterungen: würden über ${gir:Depends} und
+# pkg-config -dev-Pakete (GLib, GTK) auf das System ziehen
+usr/include
+usr/lib/*/libnolphin-extension.so
+usr/lib/*/pkgconfig
+usr/share/gir-1.0
