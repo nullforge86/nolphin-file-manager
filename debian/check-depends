@@ -1,0 +1,17 @@
+#!/bin/sh
+# Prüft die erzeugte control-Datei des Pakets nolphin: Keine
+# Entwicklerpakete (-dev) und keine Ubuntu-Cinnamon-Pakete (…t64) als
+# Abhängigkeit, damit eine Installation auf Linux Mint keine
+# Systembibliotheken ersetzt.
+set -eu
+
+control="$1"
+deps=$(sed -n 's/^\(Pre-Depends\|Depends\|Recommends\): //p' "$control" | tr ',' '\n' | sed 's/^ *//')
+
+bad=$(printf '%s\n' "$deps" | grep -E '^[^ ]+-dev( |$)|^libcinnamon[^ ]*t64( |$)|^libmuffin[^ ]*t64( |$)' || true)
+if [ -n "$bad" ]; then
+	echo "FEHLER: nolphin würde diese Pakete nachziehen:" >&2
+	printf '  %s\n' "$bad" >&2
+	exit 1
+fi
+echo "check-depends: Abhängigkeiten in Ordnung"

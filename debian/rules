@@ -5,6 +5,18 @@ export LC_ALL=C.UTF-8
 
 include /usr/share/dpkg/architecture.mk
 
+# Nolphin ist für Linux Mint gebaut. Die Cinnamon-Bibliothek heißt dort
+# libcinnamon-desktop4 (6.6), bei Ubuntu libcinnamon-desktop4t64 (6.0).
+# Ein gegen die Ubuntu-Bibliothek gebautes Paket ersetzt auf Mint die
+# Cinnamon-Bibliothek und der Desktop startet nicht mehr. Deshalb nur mit
+# den Mint-Paketen bauen (Ausnahme bewusst mit NOLPHIN_ALLOW_NON_MINT=1;
+# so gebaute Pakete NICHT auf Linux Mint installieren).
+ifneq (,$(shell dpkg-query -W -f='$${Status}' libcinnamon-desktop4t64 2>/dev/null | grep -w installed))
+ifneq (1,$(NOLPHIN_ALLOW_NON_MINT))
+$(error libcinnamon-desktop4t64 (Ubuntu) ist installiert: Paket bitte auf Linux Mint mit libcinnamon-desktop4 bauen)
+endif
+endif
+
 CONFIGURE_EXTRA_FLAGS = \
 	--libexecdir=/usr/lib/$(DEB_HOST_MULTIARCH)/nolphin \
 	--buildtype=debugoptimized \
@@ -28,6 +40,12 @@ override_dh_auto_configure:
 override_dh_auto_install:
 	dh_auto_install --destdir=debian/tmp
 
+# Das erzeugte Paket darf keine Entwicklerpakete und keine Ubuntu-eigenen
+# Cinnamon-Bibliotheken voraussetzen.
+override_dh_gencontrol:
+	dh_gencontrol
+	sh debian/check-depends debian/nolphin/DEBIAN/control
+
 override_dh_missing:
 	dh_missing --fail-missing
 
@@ -49,6 +67,11 @@ endif
 # Genau ein Paket: keine separaten -dbg- oder -dbgsym-Pakete
 override_dh_strip:
 	dh_strip --no-automatic-dbgsym
+
+# Die .gir-Datei wird nicht ausgeliefert; dh_girepository liest sie für
+# die Typelib-Abhängigkeiten aus debian/tmp.
+override_dh_girepository:
+	dh_girepository -l debian/tmp/usr/share/gir-1.0
 
 override_dh_python3:
 	dh_python3 -p nolphin /usr/share/nolphin
