@@ -8842,53 +8842,53 @@ git_resolve_repo_root (NolphinView *view, GitRootFoundCallback found_cb, gpointe
  * öffnet. Nur "Remote hinzufügen" (unten) braucht weiterhin einen eigenen
  * kleinen Eingabedialog, da der Reiter dafür keine Felder hat. */
 static void
-git_menu_action_show_tab (NolphinView *view)
+git_menu_action_show_tab (NolphinView *view, const gchar *action)
 {
     NolphinWindow *window = NOLPHIN_WINDOW (nolphin_view_get_containing_window (view));
 
-    nolphin_workspace_panel_show_git (nolphin_window_get_workspace_panel (window), window);
+    nolphin_workspace_panel_show_git_action (nolphin_window_get_workspace_panel (window), window, action);
 }
 
 static void
 action_git_status_callback (GtkAction *action, gpointer callback_data)
 {
-    git_menu_action_show_tab (NOLPHIN_VIEW (callback_data));
+    git_menu_action_show_tab (NOLPHIN_VIEW (callback_data), "status");
 }
 
 static void
 action_git_add_callback (GtkAction *action, gpointer callback_data)
 {
-    git_menu_action_show_tab (NOLPHIN_VIEW (callback_data));
+    git_menu_action_show_tab (NOLPHIN_VIEW (callback_data), "add");
 }
 
 static void
 action_git_commit_callback (GtkAction *action, gpointer callback_data)
 {
-    git_menu_action_show_tab (NOLPHIN_VIEW (callback_data));
+    git_menu_action_show_tab (NOLPHIN_VIEW (callback_data), "commit");
 }
 
 static void
 action_git_pull_callback (GtkAction *action, gpointer callback_data)
 {
-    git_menu_action_show_tab (NOLPHIN_VIEW (callback_data));
+    git_menu_action_show_tab (NOLPHIN_VIEW (callback_data), "pull");
 }
 
 static void
 action_git_push_callback (GtkAction *action, gpointer callback_data)
 {
-    git_menu_action_show_tab (NOLPHIN_VIEW (callback_data));
+    git_menu_action_show_tab (NOLPHIN_VIEW (callback_data), "push");
 }
 
 static void
 action_git_log_callback (GtkAction *action, gpointer callback_data)
 {
-    git_menu_action_show_tab (NOLPHIN_VIEW (callback_data));
+    git_menu_action_show_tab (NOLPHIN_VIEW (callback_data), "log");
 }
 
 static void
 action_git_diff_callback (GtkAction *action, gpointer callback_data)
 {
-    git_menu_action_show_tab (NOLPHIN_VIEW (callback_data));
+    git_menu_action_show_tab (NOLPHIN_VIEW (callback_data), "diff");
 }
 
 void
@@ -8903,6 +8903,24 @@ nolphin_view_activate_action_by_name (NolphinView *view, const gchar *action_nam
     if (action != NULL && gtk_action_is_sensitive (action)) {
         gtk_action_activate (action);
     }
+}
+
+/* Ergebnis einer Git-Aktion im Git-Reiter des aktiven Fensters anzeigen. */
+static void
+git_report_in_tab (const gchar *title, gboolean success, const gchar *detail)
+{
+    GtkWindow *active = gtk_application_get_active_window (GTK_APPLICATION (nolphin_application_get_singleton ()));
+    gchar *text;
+
+    if (active == NULL || !NOLPHIN_IS_WINDOW (active)) {
+        return;
+    }
+    text = g_strdup_printf ("%s: %s%s%s", title, success ? _("erfolgreich") : _("fehlgeschlagen"),
+                            (detail != NULL && *detail != '\0') ? "\n\n" : "",
+                            (detail != NULL) ? detail : "");
+    nolphin_workspace_panel_git_report (nolphin_window_get_workspace_panel (NOLPHIN_WINDOW (active)),
+                                        NOLPHIN_WINDOW (active), text);
+    g_free (text);
 }
 
 static void
@@ -8928,6 +8946,8 @@ git_sync_ready_cb (GObject *source, GAsyncResult *result, gpointer user_data)
     }
     g_application_send_notification (G_APPLICATION (nolphin_application_get_singleton ()), NULL, notification);
     g_object_unref (notification);
+    git_report_in_tab (apply ? _("Git: Synchronisieren") : _("Git: Abgleich"), text != NULL,
+                       text != NULL ? text : (error != NULL ? error->message : NULL));
     g_free (text);
     g_clear_error (&error);
 }
@@ -8959,6 +8979,7 @@ git_clone_ready_cb (GObject *source, GAsyncResult *result, gpointer user_data)
     /* Im Fenster „Dateivorgänge“ abgebrochen: keine Fehlermeldung. */
     if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
         send_archive_notification (_("Git: Repository klonen"), success, error ? error->message : NULL);
+        git_report_in_tab (_("Git: Repository klonen"), success, error ? error->message : NULL);
     }
     g_clear_error (&error);
 }
@@ -9020,6 +9041,7 @@ git_remote_add_ready_cb (GObject *source, GAsyncResult *result, gpointer user_da
     gboolean success = nolphin_git_remote_add_finish (result, &error);
 
     send_archive_notification (_("Git: Remote hinzufügen"), success, error ? error->message : NULL);
+    git_report_in_tab (_("Git: Remote hinzufügen"), success, error ? error->message : NULL);
     g_clear_error (&error);
 }
 
@@ -9030,6 +9052,7 @@ git_remote_set_url_ready_cb (GObject *source, GAsyncResult *result, gpointer use
     gboolean success = nolphin_git_remote_set_url_finish (result, &error);
 
     send_archive_notification (_("Git: Remote-Adresse ändern"), success, error ? error->message : NULL);
+    git_report_in_tab (_("Git: Remote-Adresse ändern"), success, error ? error->message : NULL);
     g_clear_error (&error);
 }
 
@@ -10640,7 +10663,10 @@ static const GtkActionEntry directory_view_entries[] = {
   /* label, accelerator */       N_("_Zugriffsrechte …"), NULL,
   /* tooltip */                  N_("Zugriffsrechte für weitere Benutzer und Gruppen festlegen (ACL)"),
                  G_CALLBACK (action_edit_acl_callback) },
-  /* name, stock id, label */  { NOLPHIN_ACTION_GIT_MENU, NULL, N_("_Git") },
+  /* name, stock id */         { NOLPHIN_ACTION_GIT_MENU, NULL,
+  /* label, accelerator */       N_("_Git"), NULL,
+  /* tooltip */                  N_("Git-Funktionen in der Seitenleiste öffnen"),
+                 G_CALLBACK (action_git_status_callback) },
   /* name, stock id */         { NOLPHIN_ACTION_GIT_STATUS, NULL,
   /* label, accelerator */       N_("_Status anzeigen"), NULL,
   /* tooltip */                  N_("Git-Status des Repositorys anzeigen"),

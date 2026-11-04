@@ -30,6 +30,9 @@ G_BEGIN_DECLS
 G_DECLARE_FINAL_TYPE (NolphinTerminal, nolphin_terminal, NOLPHIN, TERMINAL, GtkBox)
 
 GtkWidget *nolphin_terminal_new (void);
+GtkWidget *nolphin_terminal_new_at (const gchar *directory);
+const gchar *nolphin_terminal_get_current_directory (NolphinTerminal *terminal);
+void nolphin_terminal_clear (NolphinTerminal *terminal);
 
 /* Changes the shell's working directory to match the file manager's
  * current location. If the shell is currently running a foreground

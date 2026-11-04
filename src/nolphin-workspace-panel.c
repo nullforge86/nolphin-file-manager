@@ -436,7 +436,7 @@ git_tab_commit_ready_cb (GObject *source, GAsyncResult *result, gpointer user_da
 	GError *error = NULL;
 	gboolean success = nolphin_git_commit_finish (result, &error);
 
-	git_tab_set_output (d, success ? _("Commit erstellt.") : (error != NULL ? error->message : _("Fehlgeschlagen.")));
+	git_tab_set_output (d, success ? _("Commit erstellt. Mit „Hochladen“ (Push) zum Server senden.") : (error != NULL ? error->message : _("Commit fehlgeschlagen.")));
 	g_clear_error (&error);
 }
 
@@ -465,8 +465,15 @@ git_tab_pull_ready_cb (GObject *source, GAsyncResult *result, gpointer user_data
 	GitTabData *d = user_data;
 	GError *error = NULL;
 	gchar *output = nolphin_git_pull_finish (result, &error);
+	gchar *text;
 
-	git_tab_set_output (d, output != NULL ? output : (error != NULL ? error->message : _("Fehlgeschlagen.")));
+	if (output != NULL) {
+		text = g_strdup_printf ("%s\n\n%s", _("Pull abgeschlossen."), output);
+	} else {
+		text = g_strdup_printf ("%s\n\n%s", _("Pull fehlgeschlagen:"), error != NULL ? error->message : _("Unbekannter Fehler."));
+	}
+	git_tab_set_output (d, text);
+	g_free (text);
 	g_free (output);
 	g_clear_error (&error);
 }
@@ -489,8 +496,15 @@ git_tab_push_ready_cb (GObject *source, GAsyncResult *result, gpointer user_data
 	GitTabData *d = user_data;
 	GError *error = NULL;
 	gchar *output = nolphin_git_push_finish (result, &error);
+	gchar *text;
 
-	git_tab_set_output (d, output != NULL ? output : (error != NULL ? error->message : _("Fehlgeschlagen.")));
+	if (output != NULL) {
+		text = g_strdup_printf ("%s\n\n%s", _("Push abgeschlossen – deine Änderungen sind auf dem Server."), output);
+	} else {
+		text = g_strdup_printf ("%s\n\n%s", _("Push fehlgeschlagen:"), error != NULL ? error->message : _("Unbekannter Fehler."));
+	}
+	git_tab_set_output (d, text);
+	g_free (text);
 	g_free (output);
 	g_clear_error (&error);
 }
@@ -2937,6 +2951,23 @@ apply_workspace_panel_background (GtkWidget *stack)
 	g_object_unref (provider);
 }
 
+typedef struct {
+	GtkWidget *terminal_widget;   /* Haupt-Terminal (erster Reiter, folgt dem Ordner) */
+	GtkWidget *notebook;          /* Reiter mit allen Terminals */
+	NolphinWindow *window;
+	gint counter;
+} TerminalTabData;
+
+/* Das Terminal des gerade sichtbaren Reiters. */
+static NolphinTerminal *
+terminal_tab_current (TerminalTabData *d)
+{
+	gint page = gtk_notebook_get_current_page (GTK_NOTEBOOK (d->notebook));
+	GtkWidget *w = page >= 0 ? gtk_notebook_get_nth_page (GTK_NOTEBOOK (d->notebook), page) : NULL;
+
+	return NOLPHIN_TERMINAL (w != NULL ? w : d->terminal_widget);
+}
+
 /* Terminal-Seite: derselbe "← Zur Vorschau"-Knopf oben wie bei den
  * anderen Reitern, darunter das echte, uebergebene Terminal-Widget
  * (kein zweites Terminal - dasselbe, das frueher im unteren
@@ -2944,59 +2975,140 @@ apply_workspace_panel_background (GtkWidget *stack)
 static void
 on_terminal_copy_activate (GtkMenuItem *item, gpointer user_data)
 {
-	nolphin_terminal_copy (NOLPHIN_TERMINAL (user_data));
+	nolphin_terminal_copy (terminal_tab_current (user_data));
 }
 
 static void
 on_terminal_paste_activate (GtkMenuItem *item, gpointer user_data)
 {
-	nolphin_terminal_paste (NOLPHIN_TERMINAL (user_data));
+	nolphin_terminal_paste (terminal_tab_current (user_data));
 }
 
 static void
 on_terminal_copy_html_activate (GtkMenuItem *item, gpointer user_data)
 {
-	nolphin_terminal_copy_html (NOLPHIN_TERMINAL (user_data));
+	nolphin_terminal_copy_html (terminal_tab_current (user_data));
 }
 
 static void
 on_terminal_select_all_activate (GtkMenuItem *item, gpointer user_data)
 {
-	nolphin_terminal_select_all (NOLPHIN_TERMINAL (user_data));
+	nolphin_terminal_select_all (terminal_tab_current (user_data));
 }
 
 static void
 on_terminal_zoom_in_activate (GtkMenuItem *item, gpointer user_data)
 {
-	nolphin_terminal_zoom_in (NOLPHIN_TERMINAL (user_data));
+	nolphin_terminal_zoom_in (terminal_tab_current (user_data));
 }
 
 static void
 on_terminal_zoom_out_activate (GtkMenuItem *item, gpointer user_data)
 {
-	nolphin_terminal_zoom_out (NOLPHIN_TERMINAL (user_data));
+	nolphin_terminal_zoom_out (terminal_tab_current (user_data));
 }
 
 static void
 on_terminal_zoom_reset_activate (GtkMenuItem *item, gpointer user_data)
 {
-	nolphin_terminal_zoom_reset (NOLPHIN_TERMINAL (user_data));
+	nolphin_terminal_zoom_reset (terminal_tab_current (user_data));
 }
 
 static void
 on_terminal_reset_activate (GtkMenuItem *item, gpointer user_data)
 {
-	nolphin_terminal_reset (NOLPHIN_TERMINAL (user_data));
+	nolphin_terminal_reset (terminal_tab_current (user_data));
+}
+
+static void
+on_terminal_clear_activate (GtkMenuItem *item, gpointer user_data)
+{
+	nolphin_terminal_clear (terminal_tab_current (user_data));
+}
+
+static void terminal_tab_add (TerminalTabData *d);
+static void terminal_tab_close (TerminalTabData *d, GtkWidget *terminal);
+static void on_terminal_settings_activate (GtkMenuItem *item, gpointer user_data);
+
+static void
+on_terminal_new_tab_activate (GtkMenuItem *item, gpointer user_data)
+{
+	terminal_tab_add (user_data);
+}
+
+static void
+on_terminal_close_tab_activate (GtkMenuItem *item, gpointer user_data)
+{
+	TerminalTabData *d = user_data;
+
+	terminal_tab_close (d, GTK_WIDGET (terminal_tab_current (d)));
+}
+
+static void
+on_terminal_tab_close_clicked (GtkButton *button, gpointer user_data)
+{
+	TerminalTabData *d = g_object_get_data (G_OBJECT (button), "tab-data");
+
+	terminal_tab_close (d, GTK_WIDGET (user_data));
+}
+
+static void
+terminal_tab_update_tabs (TerminalTabData *d)
+{
+	gtk_notebook_set_show_tabs (GTK_NOTEBOOK (d->notebook),
+				    gtk_notebook_get_n_pages (GTK_NOTEBOOK (d->notebook)) > 1);
+}
+
+static void
+terminal_tab_close (TerminalTabData *d, GtkWidget *terminal)
+{
+	gint page;
+
+	/* Das Haupt-Terminal gehört dem Fenster und bleibt immer bestehen. */
+	if (terminal == d->terminal_widget) {
+		return;
+	}
+	page = gtk_notebook_page_num (GTK_NOTEBOOK (d->notebook), terminal);
+	if (page >= 0) {
+		gtk_notebook_remove_page (GTK_NOTEBOOK (d->notebook), page);
+	}
+	terminal_tab_update_tabs (d);
+}
+
+static void
+terminal_tab_add (TerminalTabData *d)
+{
+	const gchar *dir = nolphin_terminal_get_current_directory (NOLPHIN_TERMINAL (d->terminal_widget));
+	GtkWidget *term = nolphin_terminal_new_at (dir);
+	GtkWidget *label_box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 4);
+	GtkWidget *close_button = gtk_button_new_from_icon_name ("window-close-symbolic", GTK_ICON_SIZE_MENU);
+	gchar *title;
+	gint page;
+
+	d->counter++;
+	title = g_strdup_printf (_("Terminal %d"), d->counter);
+	gtk_box_pack_start (GTK_BOX (label_box), gtk_label_new (title), FALSE, FALSE, 0);
+	g_free (title);
+	gtk_button_set_relief (GTK_BUTTON (close_button), GTK_RELIEF_NONE);
+	gtk_widget_set_tooltip_text (close_button, _("Reiter schließen"));
+	g_object_set_data (G_OBJECT (close_button), "tab-data", d);
+	g_signal_connect (close_button, "clicked", G_CALLBACK (on_terminal_tab_close_clicked), term);
+	gtk_box_pack_start (GTK_BOX (label_box), close_button, FALSE, FALSE, 0);
+	gtk_widget_show_all (label_box);
+
+	g_signal_connect (term, "settings-requested", G_CALLBACK (on_terminal_settings_activate), d);
+
+	gtk_widget_show_all (term);
+	page = gtk_notebook_append_page (GTK_NOTEBOOK (d->notebook), term, label_box);
+	terminal_tab_update_tabs (d);
+	gtk_notebook_set_current_page (GTK_NOTEBOOK (d->notebook), page);
+	nolphin_terminal_grab_focus (NOLPHIN_TERMINAL (term));
 }
 
 /* Menüleiste ins Panel eingebaut (kein eigenes Fenster) - nur Einträge,
  * die auch tatsächlich etwas tun: "Datei"/"Suchen"/"Hilfe" aus
  * einem gewöhnlichen Terminalfenster fehlen bewusst, dafür gibt es hier
  * (noch) keine echte Funktion (Tabs, Scrollback-Suche). */
-typedef struct {
-	GtkWidget *terminal_widget;
-	NolphinWindow *window;
-} TerminalTabData;
 
 /* Referenz-Reihenfolge "Form der Eingabemarke": 0 = Rechteck (Block),
  * 1 = Unterstrich, 2 = Senkrechter Balken (I-Beam) - alle drei sind
@@ -4766,7 +4878,7 @@ on_terminal_settings_activate (GtkMenuItem *item, gpointer user_data)
     gtk_widget_set_vexpand (stack, TRUE);
     gtk_stack_add_named (GTK_STACK (stack), build_prefs_general_page (), "general");
     gtk_stack_add_named (GTK_STACK (stack), build_prefs_keybindings_page (), "keybindings");
-    gtk_stack_add_named (GTK_STACK (stack), build_prefs_profile_notebook (d->terminal_widget), "profile");
+    gtk_stack_add_named (GTK_STACK (stack), build_prefs_profile_notebook (GTK_WIDGET (terminal_tab_current (d))), "profile");
     gtk_stack_set_visible_child_name (GTK_STACK (stack), "profile");
     gtk_box_pack_start (GTK_BOX (content_hbox), stack, TRUE, TRUE, 0);
     g_object_set_data (G_OBJECT (page), "prefs-stack", stack);
@@ -4794,27 +4906,26 @@ on_terminal_settings_activate (GtkMenuItem *item, gpointer user_data)
 static GtkWidget *
 build_terminal_menu_bar (TerminalTabData *d)
 {
-	GtkWidget *terminal_widget = d->terminal_widget;
 	GtkWidget *menu_bar;
 	GtkWidget *edit_menu_item, *edit_menu, *copy_item, *copy_html_item, *paste_item, *select_all_item, *settings_item;
 	GtkWidget *view_menu_item, *view_menu, *zoom_in_item, *zoom_out_item, *zoom_reset_item;
-	GtkWidget *terminal_menu_item, *terminal_menu, *reset_item;
+	GtkWidget *terminal_menu_item, *terminal_menu, *reset_item, *clear_item, *new_tab_item, *close_tab_item;
 
 	menu_bar = gtk_menu_bar_new ();
 
 	edit_menu_item = gtk_menu_item_new_with_label (_("Bearbeiten"));
 	edit_menu = gtk_menu_new ();
 	copy_item = gtk_menu_item_new_with_label (_("Kopieren"));
-	g_signal_connect (copy_item, "activate", G_CALLBACK (on_terminal_copy_activate), terminal_widget);
+	g_signal_connect (copy_item, "activate", G_CALLBACK (on_terminal_copy_activate), d);
 	gtk_menu_shell_append (GTK_MENU_SHELL (edit_menu), copy_item);
 	copy_html_item = gtk_menu_item_new_with_label (_("Als HTML kopieren"));
-	g_signal_connect (copy_html_item, "activate", G_CALLBACK (on_terminal_copy_html_activate), terminal_widget);
+	g_signal_connect (copy_html_item, "activate", G_CALLBACK (on_terminal_copy_html_activate), d);
 	gtk_menu_shell_append (GTK_MENU_SHELL (edit_menu), copy_html_item);
 	paste_item = gtk_menu_item_new_with_label (_("Einfügen"));
-	g_signal_connect (paste_item, "activate", G_CALLBACK (on_terminal_paste_activate), terminal_widget);
+	g_signal_connect (paste_item, "activate", G_CALLBACK (on_terminal_paste_activate), d);
 	gtk_menu_shell_append (GTK_MENU_SHELL (edit_menu), paste_item);
 	select_all_item = gtk_menu_item_new_with_label (_("Alles auswählen"));
-	g_signal_connect (select_all_item, "activate", G_CALLBACK (on_terminal_select_all_activate), terminal_widget);
+	g_signal_connect (select_all_item, "activate", G_CALLBACK (on_terminal_select_all_activate), d);
 	gtk_menu_shell_append (GTK_MENU_SHELL (edit_menu), select_all_item);
 	gtk_menu_shell_append (GTK_MENU_SHELL (edit_menu), gtk_separator_menu_item_new ());
 	settings_item = gtk_menu_item_new_with_label (_("Einstellungen …"));
@@ -4826,21 +4937,31 @@ build_terminal_menu_bar (TerminalTabData *d)
 	view_menu_item = gtk_menu_item_new_with_label (_("Ansicht"));
 	view_menu = gtk_menu_new ();
 	zoom_in_item = gtk_menu_item_new_with_label (_("Vergrößern"));
-	g_signal_connect (zoom_in_item, "activate", G_CALLBACK (on_terminal_zoom_in_activate), terminal_widget);
+	g_signal_connect (zoom_in_item, "activate", G_CALLBACK (on_terminal_zoom_in_activate), d);
 	gtk_menu_shell_append (GTK_MENU_SHELL (view_menu), zoom_in_item);
 	zoom_out_item = gtk_menu_item_new_with_label (_("Verkleinern"));
-	g_signal_connect (zoom_out_item, "activate", G_CALLBACK (on_terminal_zoom_out_activate), terminal_widget);
+	g_signal_connect (zoom_out_item, "activate", G_CALLBACK (on_terminal_zoom_out_activate), d);
 	gtk_menu_shell_append (GTK_MENU_SHELL (view_menu), zoom_out_item);
 	zoom_reset_item = gtk_menu_item_new_with_label (_("Normale Größe"));
-	g_signal_connect (zoom_reset_item, "activate", G_CALLBACK (on_terminal_zoom_reset_activate), terminal_widget);
+	g_signal_connect (zoom_reset_item, "activate", G_CALLBACK (on_terminal_zoom_reset_activate), d);
 	gtk_menu_shell_append (GTK_MENU_SHELL (view_menu), zoom_reset_item);
 	gtk_menu_item_set_submenu (GTK_MENU_ITEM (view_menu_item), view_menu);
 	gtk_menu_shell_append (GTK_MENU_SHELL (menu_bar), view_menu_item);
 
 	terminal_menu_item = gtk_menu_item_new_with_label (_("Terminal"));
 	terminal_menu = gtk_menu_new ();
-	reset_item = gtk_menu_item_new_with_label (_("Zurücksetzen"));
-	g_signal_connect (reset_item, "activate", G_CALLBACK (on_terminal_reset_activate), terminal_widget);
+	new_tab_item = gtk_menu_item_new_with_label (_("Neuer Reiter"));
+	g_signal_connect (new_tab_item, "activate", G_CALLBACK (on_terminal_new_tab_activate), d);
+	gtk_menu_shell_append (GTK_MENU_SHELL (terminal_menu), new_tab_item);
+	close_tab_item = gtk_menu_item_new_with_label (_("Reiter schließen"));
+	g_signal_connect (close_tab_item, "activate", G_CALLBACK (on_terminal_close_tab_activate), d);
+	gtk_menu_shell_append (GTK_MENU_SHELL (terminal_menu), close_tab_item);
+	gtk_menu_shell_append (GTK_MENU_SHELL (terminal_menu), gtk_separator_menu_item_new ());
+	clear_item = gtk_menu_item_new_with_label (_("Leeren"));
+	g_signal_connect (clear_item, "activate", G_CALLBACK (on_terminal_clear_activate), d);
+	gtk_menu_shell_append (GTK_MENU_SHELL (terminal_menu), clear_item);
+	reset_item = gtk_menu_item_new_with_label (_("Zurücksetzen und leeren"));
+	g_signal_connect (reset_item, "activate", G_CALLBACK (on_terminal_reset_activate), d);
 	gtk_menu_shell_append (GTK_MENU_SHELL (terminal_menu), reset_item);
 	gtk_menu_item_set_submenu (GTK_MENU_ITEM (terminal_menu_item), terminal_menu);
 	gtk_menu_shell_append (GTK_MENU_SHELL (menu_bar), terminal_menu_item);
@@ -4858,6 +4979,13 @@ build_terminal_tab (NolphinWindow *window, GtkWidget *terminal_widget)
 
 	d->terminal_widget = terminal_widget;
 	d->window = window;
+	d->counter = 1;
+	d->notebook = gtk_notebook_new ();
+	gtk_notebook_set_show_tabs (GTK_NOTEBOOK (d->notebook), FALSE);
+	gtk_notebook_set_scrollable (GTK_NOTEBOOK (d->notebook), TRUE);
+	gtk_notebook_append_page (GTK_NOTEBOOK (d->notebook), terminal_widget,
+				  gtk_label_new (_("Terminal 1")));
+	gtk_widget_show (d->notebook);
 	menu_bar = build_terminal_menu_bar (d);
 	g_object_set_data_full (G_OBJECT (box), "terminal-tab-data", d, g_free);
 
@@ -4872,7 +5000,7 @@ build_terminal_tab (NolphinWindow *window, GtkWidget *terminal_widget)
 	gtk_widget_set_margin_top (back_button, 8);
 	gtk_box_pack_start (GTK_BOX (box), back_button, FALSE, FALSE, 0);
 	gtk_box_pack_start (GTK_BOX (box), menu_bar, FALSE, FALSE, 0);
-	gtk_box_pack_start (GTK_BOX (box), terminal_widget, TRUE, TRUE, 0);
+	gtk_box_pack_start (GTK_BOX (box), d->notebook, TRUE, TRUE, 0);
 
 	return box;
 }
@@ -5243,9 +5371,13 @@ nolphin_workspace_panel_show_batch_rename (GtkWidget *workspace_panel, NolphinWi
 	workspace_panel_show_page (workspace_panel, window, "rename");
 }
 
-/* Zeigt die Git-Seite und stößt sofort eine Status-Aktualisierung an. */
+/* Zeigt die Git-Seite und führt die gewünschte Aktion sofort aus
+ * (@action: "status", "add", "commit", "pull", "push", "log", "diff";
+ * NULL oder unbekannt = Status). "commit" braucht eine Nachricht: dort
+ * wird nur das Eingabefeld fokussiert; ist es schon ausgefüllt, wird
+ * direkt committet. */
 void
-nolphin_workspace_panel_show_git (GtkWidget *workspace_panel, NolphinWindow *window)
+nolphin_workspace_panel_show_git_action (GtkWidget *workspace_panel, NolphinWindow *window, const gchar *action)
 {
 	GtkWidget *git_tab;
 	GitTabData *d;
@@ -5255,11 +5387,59 @@ nolphin_workspace_panel_show_git (GtkWidget *workspace_panel, NolphinWindow *win
 	git_tab = gtk_stack_get_child_by_name (GTK_STACK (workspace_panel), "git");
 	d = g_object_get_data (G_OBJECT (git_tab), "git-tab-data");
 
-	if (d != NULL) {
-		git_tab_resolve_root (d, git_tab_status_found);
+	workspace_panel_show_page (workspace_panel, window, "git");
+
+	if (d == NULL) {
+		return;
 	}
 
+	if (g_strcmp0 (action, "add") == 0) {
+		git_tab_resolve_root (d, git_tab_add_found);
+	} else if (g_strcmp0 (action, "commit") == 0) {
+		const gchar *msg = gtk_entry_get_text (GTK_ENTRY (d->commit_entry));
+
+		if (msg != NULL && *msg != '\0') {
+			git_tab_resolve_root (d, git_tab_commit_found);
+		} else {
+			git_tab_set_output (d, _("Bitte eine Commit-Nachricht eingeben und auf „Speichern“ klicken."));
+			gtk_widget_grab_focus (d->commit_entry);
+		}
+	} else if (g_strcmp0 (action, "pull") == 0) {
+		git_tab_resolve_root (d, git_tab_pull_found);
+	} else if (g_strcmp0 (action, "push") == 0) {
+		git_tab_resolve_root (d, git_tab_push_found);
+	} else if (g_strcmp0 (action, "log") == 0) {
+		git_tab_resolve_root (d, git_tab_log_found);
+	} else if (g_strcmp0 (action, "diff") == 0) {
+		git_tab_resolve_root (d, git_tab_diff_found);
+	} else {
+		git_tab_resolve_root (d, git_tab_status_found);
+	}
+}
+
+/* Zeigt das Ergebnis einer Git-Aktion (Synchronisieren, Klonen, Remote …)
+ * sichtbar im Git-Reiter - eine Desktop-Benachrichtigung allein wird
+ * leicht übersehen. */
+void
+nolphin_workspace_panel_git_report (GtkWidget *workspace_panel, NolphinWindow *window, const gchar *text)
+{
+	GtkWidget *git_tab;
+	GitTabData *d;
+
+	g_return_if_fail (GTK_IS_STACK (workspace_panel));
+
+	git_tab = gtk_stack_get_child_by_name (GTK_STACK (workspace_panel), "git");
+	d = g_object_get_data (G_OBJECT (git_tab), "git-tab-data");
 	workspace_panel_show_page (workspace_panel, window, "git");
+	if (d != NULL) {
+		git_tab_set_output (d, text);
+	}
+}
+
+void
+nolphin_workspace_panel_show_git (GtkWidget *workspace_panel, NolphinWindow *window)
+{
+	nolphin_workspace_panel_show_git_action (workspace_panel, window, "status");
 }
 
 void

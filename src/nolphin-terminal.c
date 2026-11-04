@@ -301,11 +301,40 @@ nolphin_terminal_zoom_reset (NolphinTerminal *terminal)
     vte_terminal_set_font_scale (VTE_TERMINAL (terminal->vte), 1.0);
 }
 
+/* Nach dem Leeren zeichnet die Shell ihre Eingabeaufforderung nicht von
+ * selbst neu - der Bildschirm waere komplett leer (ohne
+ * "nutzer@rechner:~$ "). Strg+L (Form Feed) laesst die Shell (readline)
+ * die Zeile neu aufbauen. Laeuft gerade ein Programm im Vordergrund,
+ * wuerde Strg+L dort ankommen - dann bleibt es beim leeren Bildschirm. */
+static void
+redraw_prompt (NolphinTerminal *terminal)
+{
+    if (terminal->child_pid > 0 && !nolphin_terminal_is_shell_busy (terminal)) {
+        vte_terminal_feed_child (VTE_TERMINAL (terminal->vte), "\014", 1);
+    }
+}
+
 void
 nolphin_terminal_reset (NolphinTerminal *terminal)
 {
     g_return_if_fail (NOLPHIN_IS_TERMINAL (terminal));
     vte_terminal_reset (VTE_TERMINAL (terminal->vte), TRUE, TRUE);
+    redraw_prompt (terminal);
+}
+
+void
+nolphin_terminal_clear (NolphinTerminal *terminal)
+{
+    g_return_if_fail (NOLPHIN_IS_TERMINAL (terminal));
+    vte_terminal_reset (VTE_TERMINAL (terminal->vte), FALSE, TRUE);
+    redraw_prompt (terminal);
+}
+
+const gchar *
+nolphin_terminal_get_current_directory (NolphinTerminal *terminal)
+{
+    g_return_val_if_fail (NOLPHIN_IS_TERMINAL (terminal), NULL);
+    return terminal->last_cwd;
 }
 
 double
@@ -1295,11 +1324,27 @@ nolphin_terminal_init (NolphinTerminal *terminal)
     gtk_widget_show (scrolled);
 
     load_settings (terminal);
-    spawn_shell (terminal);
+    /* Die Shell startet erst in nolphin_terminal_new*(), damit ein neuer
+     * Reiter gleich im gewuenschten Ordner beginnt. */
 }
 
 GtkWidget *
 nolphin_terminal_new (void)
 {
-    return GTK_WIDGET (g_object_new (NOLPHIN_TYPE_TERMINAL, NULL));
+    return nolphin_terminal_new_at (NULL);
+}
+
+GtkWidget *
+nolphin_terminal_new_at (const gchar *directory)
+{
+    NolphinTerminal *terminal = g_object_new (NOLPHIN_TYPE_TERMINAL, NULL);
+
+    if (directory != NULL && g_file_test (directory, G_FILE_TEST_IS_DIR)) {
+        g_free (terminal->cwd);
+        terminal->cwd = g_strdup (directory);
+        g_free (terminal->last_cwd);
+        terminal->last_cwd = g_strdup (directory);
+    }
+    spawn_shell (terminal);
+    return GTK_WIDGET (terminal);
 }

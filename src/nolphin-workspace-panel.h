@@ -95,6 +95,12 @@ void       nolphin_workspace_panel_show_workspaces (GtkWidget *workspace_panel,
  * Status-Aktualisierung an. */
 void       nolphin_workspace_panel_show_git          (GtkWidget *workspace_panel,
 						       NolphinWindow *window);
+void       nolphin_workspace_panel_git_report        (GtkWidget *workspace_panel,
+						       NolphinWindow *window,
+						       const gchar *text);
+void       nolphin_workspace_panel_show_git_action   (GtkWidget *workspace_panel,
+						       NolphinWindow *window,
+						       const gchar *action);
 
 /* Zeigt die README.md des GID-Projekts @project_folder und blendet
  * das Panel ein. */

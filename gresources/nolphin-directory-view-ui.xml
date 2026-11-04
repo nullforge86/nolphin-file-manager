@@ -259,22 +259,7 @@
 	<menuitem name="Encrypt" action="Encrypt"/>
 	<menuitem name="Decrypt" action="Decrypt"/>
 	<separator name="Git separator"/>
-	<menu action="GitMenu">
-		<menuitem name="GitStatus" action="GitStatus"/>
-		<menuitem name="GitAdd" action="GitAdd"/>
-		<menuitem name="GitCommit" action="GitCommit"/>
-		<separator/>
-		<menuitem name="GitCompare" action="GitCompare"/>
-		<menuitem name="GitSync" action="GitSync"/>
-		<menuitem name="GitPull" action="GitPull"/>
-		<menuitem name="GitPush" action="GitPush"/>
-		<separator/>
-		<menuitem name="GitLog" action="GitLog"/>
-		<menuitem name="GitDiff" action="GitDiff"/>
-		<separator/>
-		<menuitem name="GitClone" action="GitClone"/>
-		<menuitem name="GitRemoteAdd" action="GitRemoteAdd"/>
-	</menu>
+	<menuitem name="GitMenu" action="GitMenu"/>
 	<separator name="Metadata separator"/>
 	<menu action="MetadataMenu">
 		<menuitem name="EditTags" action="EditTags"/>
