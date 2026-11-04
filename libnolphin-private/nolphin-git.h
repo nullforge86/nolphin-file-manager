@@ -99,6 +99,13 @@ void     nolphin_git_commit_async   (GFile *repo_root, const gchar *message,
                                      GAsyncReadyCallback callback, gpointer user_data);
 gboolean nolphin_git_commit_finish  (GAsyncResult *result, GError **error);
 
+/* Wie commit, merkt aber alle Änderungen selbst vor, wenn noch nichts
+ * vorgemerkt ist. Liefert eine Zusammenfassung (Hash, Titel, Dateien). */
+void     nolphin_git_commit_full_async  (GFile *repo_root, const gchar *message,
+                                         GCancellable *cancellable,
+                                         GAsyncReadyCallback callback, gpointer user_data);
+gchar   *nolphin_git_commit_full_finish (GAsyncResult *result, GError **error);
+
 void     nolphin_git_pull_async     (GFile *repo_root,
                                      GCancellable *cancellable,
                                      GAsyncReadyCallback callback, gpointer user_data);

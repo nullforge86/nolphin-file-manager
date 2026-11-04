@@ -677,6 +677,90 @@ nolphin_git_commit_finish (GAsyncResult *result, GError **error)
 
 static gboolean git_run_blocking (const gchar *repo_path, gchar **out, gchar **err_text, ...);
 
+/* Vollständiger Commit: ist noch nichts vorgemerkt, werden alle Änderungen
+ * automatisch vorgemerkt ("git add -A"), damit man nicht erst "Hinzufügen"
+ * drücken muss. Liefert eine Zusammenfassung des neuen Commits; bei einem
+ * Fehler (nichts zu committen, Name/E-Mail fehlen, ...) den git-Text. */
+static void
+git_commit_full_thread (GTask *task, gpointer source, gpointer task_data, GCancellable *cancellable)
+{
+    gchar *repo_path = g_object_get_data (G_OBJECT (task), "repo-path");
+    const gchar *message = g_object_get_data (G_OBJECT (task), "message");
+    gchar *out = NULL, *err = NULL, *summary = NULL;
+
+    /* Exit 0 = nichts vorgemerkt, Exit 1 = es gibt Vorgemerktes. */
+    if (git_run_blocking (repo_path, NULL, NULL, "diff", "--cached", "--quiet", NULL)) {
+        if (!git_run_blocking (repo_path, NULL, &err, "add", "-A", NULL)) {
+            g_task_return_new_error (task, NOLPHIN_GIT_ERROR, NOLPHIN_GIT_ERROR_TOOL_FAILED, "%s%s%s",
+                                     _("Änderungen konnten nicht vorgemerkt werden."),
+                                     err[0] != '\0' ? "\n" : "", err);
+            g_free (err);
+            return;
+        }
+        g_free (err);
+        err = NULL;
+        if (git_run_blocking (repo_path, NULL, NULL, "diff", "--cached", "--quiet", NULL)) {
+            g_task_return_new_error (task, NOLPHIN_GIT_ERROR, NOLPHIN_GIT_ERROR_TOOL_FAILED, "%s",
+                                     _("Es gibt keine Änderungen zum Speichern – alles ist schon committet."));
+            return;
+        }
+    }
+
+    if (!git_run_blocking (repo_path, &out, &err, "commit", "-m", message, NULL)) {
+        const gchar *detail = (err != NULL && err[0] != '\0') ? err : (out != NULL ? out : "");
+
+        if (strstr (detail, "tell me who you are") != NULL || strstr (detail, "empty ident") != NULL) {
+            detail = _("Git kennt deinen Namen noch nicht. Einmalig im Terminal eingeben:\n"
+                       "git config --global user.name \"Dein Name\"\n"
+                       "git config --global user.email \"deine@mail.de\"");
+        }
+        g_task_return_new_error (task, NOLPHIN_GIT_ERROR, NOLPHIN_GIT_ERROR_TOOL_FAILED, "%s\n%s",
+                                 _("Commit fehlgeschlagen."), detail);
+        g_free (out);
+        g_free (err);
+        return;
+    }
+    g_free (out);
+    g_free (err);
+
+    out = NULL;
+    git_run_blocking (repo_path, &out, NULL, "log", "-1", "--stat", "--format=%h %s", NULL);
+    summary = g_strdup_printf ("%s\n\n%s", _("Commit erstellt:"), out != NULL ? out : "");
+    g_free (out);
+    g_task_return_pointer (task, summary, g_free);
+}
+
+void
+nolphin_git_commit_full_async (GFile *repo_root, const gchar *message,
+                               GCancellable *cancellable,
+                               GAsyncReadyCallback callback, gpointer user_data)
+{
+    GTask *task;
+    gchar *repo_path;
+
+    g_return_if_fail (G_IS_FILE (repo_root));
+    g_return_if_fail (message != NULL && message[0] != '\0');
+
+    task = g_task_new (NULL, cancellable, callback, user_data);
+    g_task_set_source_tag (task, nolphin_git_commit_full_async);
+
+    repo_path = require_repo_path (repo_root, task);
+    if (repo_path == NULL) {
+        return;
+    }
+
+    g_object_set_data_full (G_OBJECT (task), "repo-path", repo_path, g_free);
+    g_object_set_data_full (G_OBJECT (task), "message", g_strdup (message), g_free);
+    g_task_run_in_thread (task, git_commit_full_thread);
+    g_object_unref (task);
+}
+
+gchar *
+nolphin_git_commit_full_finish (GAsyncResult *result, GError **error)
+{
+    return g_task_propagate_pointer (G_TASK (result), error);
+}
+
 /* Netzwerkvorgänge (Pull, Push, Synchronisieren) erscheinen bei längerer
  * Dauer im Fenster „Dateivorgänge“, wie Kopiervorgänge. */
 static void

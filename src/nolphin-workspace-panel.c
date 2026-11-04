@@ -282,7 +282,11 @@ typedef struct {
 	NolphinWindow *window;
 	GtkWidget     *output_view;
 	GtkWidget     *commit_entry;
+	gboolean       push_after;     /* nach dem Commit gleich hochladen */
+	GFile         *pending_root;   /* Repository des laufenden Commits */
 } GitTabData;
+
+static void git_tab_push_ready_cb (GObject *source, GAsyncResult *result, gpointer user_data);
 
 static void
 git_tab_set_output (GitTabData *d, const gchar *text)
@@ -434,10 +438,31 @@ git_tab_commit_ready_cb (GObject *source, GAsyncResult *result, gpointer user_da
 {
 	GitTabData *d = user_data;
 	GError *error = NULL;
-	gboolean success = nolphin_git_commit_finish (result, &error);
+	gchar *summary = nolphin_git_commit_full_finish (result, &error);
+	GFile *root = d->pending_root;
 
-	git_tab_set_output (d, success ? _("Commit erstellt. Mit „Hochladen“ (Push) zum Server senden.") : (error != NULL ? error->message : _("Commit fehlgeschlagen.")));
+	d->pending_root = NULL;
+
+	if (summary == NULL) {
+		git_tab_set_output (d, error != NULL ? error->message : _("Commit fehlgeschlagen."));
+	} else if (d->push_after && root != NULL) {
+		gchar *text = g_strdup_printf ("%s\n\n%s", summary, _("Lade jetzt zum Server hoch …"));
+
+		gtk_entry_set_text (GTK_ENTRY (d->commit_entry), "");
+		git_tab_set_output (d, text);
+		g_free (text);
+		nolphin_git_push_async (root, NULL, git_tab_push_ready_cb, d);
+	} else {
+		gchar *text = g_strdup_printf ("%s\n\n%s", summary,
+					       _("Noch nicht auf dem Server – dafür „Push (Hochladen)“ klicken."));
+
+		gtk_entry_set_text (GTK_ENTRY (d->commit_entry), "");
+		git_tab_set_output (d, text);
+		g_free (text);
+	}
+	g_free (summary);
 	g_clear_error (&error);
+	g_clear_object (&root);
 }
 
 static void
@@ -447,16 +472,32 @@ git_tab_commit_found (GitTabData *d, GFile *repo_root, GList *selected_files)
 
 	if (message == NULL || *message == '\0') {
 		git_tab_set_output (d, _("Bitte eine Commit-Nachricht eingeben."));
+		gtk_widget_grab_focus (d->commit_entry);
 		return;
 	}
 
-	nolphin_git_commit_async (repo_root, message, NULL, git_tab_commit_ready_cb, d);
+	g_clear_object (&d->pending_root);
+	d->pending_root = g_object_ref (repo_root);
+	git_tab_set_output (d, _("Speichere …"));
+	nolphin_git_commit_full_async (repo_root, message, NULL, git_tab_commit_ready_cb, d);
 }
 
 static void
 on_git_commit_clicked (GtkButton *button, gpointer user_data)
 {
-	git_tab_resolve_root ((GitTabData *) user_data, git_tab_commit_found);
+	GitTabData *d = user_data;
+
+	d->push_after = FALSE;
+	git_tab_resolve_root (d, git_tab_commit_found);
+}
+
+static void
+on_git_commit_push_clicked (GtkButton *button, gpointer user_data)
+{
+	GitTabData *d = user_data;
+
+	d->push_after = TRUE;
+	git_tab_resolve_root (d, git_tab_commit_found);
 }
 
 static void
@@ -1223,6 +1264,7 @@ build_git_tab (NolphinWindow *window)
 	GtkWidget *output_scroller;
 	GtkWidget *commit_box;
 	GtkWidget *commit_button;
+	GtkWidget *commit_push_button;
 	GtkWidget *sync_button;
 	GitTabData *d;
 
@@ -1252,7 +1294,7 @@ build_git_tab (NolphinWindow *window)
 	{
 		GtkWidget *caption = gtk_label_new (NULL);
 
-		gtk_label_set_markup (GTK_LABEL (caption), "<small><b>2. Speichern</b></small>");
+		gtk_label_set_markup (GTK_LABEL (caption), "<small><b>2. Commit – Änderungen speichern (Nachricht eingeben, dann „Commit“)</b></small>");
 		gtk_style_context_add_class (gtk_widget_get_style_context (caption), "dim-label");
 		gtk_label_set_xalign (GTK_LABEL (caption), 0.0);
 		gtk_widget_set_margin_top (caption, 10);
@@ -1266,16 +1308,22 @@ build_git_tab (NolphinWindow *window)
 	gtk_widget_set_hexpand (d->commit_entry, TRUE);
 	gtk_box_pack_start (GTK_BOX (commit_box), d->commit_entry, TRUE, TRUE, 0);
 
-	commit_button = gtk_button_new_with_label (_("Speichern"));
+	commit_button = gtk_button_new_with_label (_("Commit"));
 	gtk_button_set_image (GTK_BUTTON (commit_button),
 			      gtk_image_new_from_icon_name ("document-save-symbolic", GTK_ICON_SIZE_BUTTON));
 	gtk_button_set_always_show_image (GTK_BUTTON (commit_button), TRUE);
 	gtk_style_context_add_class (gtk_widget_get_style_context (commit_button), "suggested-action");
-	gtk_widget_set_tooltip_text (commit_button, _("Legt die vorgemerkten Änderungen als neuen Stand ab (Commit)"));
+	gtk_widget_set_tooltip_text (commit_button, _("Legt die Änderungen als neuen Stand ab (Commit). Ist nichts vorgemerkt, werden alle geänderten Dateien genommen."));
 	g_signal_connect (commit_button, "clicked", G_CALLBACK (on_git_commit_clicked), d);
 	gtk_box_pack_start (GTK_BOX (commit_box), commit_button, FALSE, FALSE, 0);
 
-	flow = git_tab_new_section (box, _("3. Mit dem Server (z. B. GitHub)"));
+	commit_push_button = gtk_button_new_with_label (_("Commit + Push"));
+	gtk_widget_set_tooltip_text (commit_push_button,
+				     _("Speichert die Änderungen und lädt sie sofort zum Server hoch"));
+	g_signal_connect (commit_push_button, "clicked", G_CALLBACK (on_git_commit_push_clicked), d);
+	gtk_box_pack_start (GTK_BOX (commit_box), commit_push_button, FALSE, FALSE, 0);
+
+	flow = git_tab_new_section (box, _("3. Push – zum Server (z. B. GitHub) hochladen"));
 	sync_button = git_tab_add_button (flow, "emblem-synchronizing-symbolic", _("Synchronisieren"),
 			    _("Holt Neues vom Server und lädt deine Änderungen hoch"),
 			    G_CALLBACK (on_git_view_action_clicked), d, NOLPHIN_ACTION_GIT_SYNC);
@@ -1283,10 +1331,10 @@ build_git_tab (NolphinWindow *window)
 	git_tab_add_button (flow, "edit-find-symbolic", _("Abgleichen"),
 			    _("Zeigt, was lokal und auf dem Server unterschiedlich ist, ohne etwas zu ändern"),
 			    G_CALLBACK (on_git_view_action_clicked), d, NOLPHIN_ACTION_GIT_COMPARE);
-	git_tab_add_button (flow, "go-down-symbolic", _("Herunterladen"),
+	git_tab_add_button (flow, "go-down-symbolic", _("Pull (Herunterladen)"),
 			    _("Holt Änderungen vom Server (Pull)"),
 			    G_CALLBACK (on_git_pull_clicked), d, NULL);
-	git_tab_add_button (flow, "go-up-symbolic", _("Hochladen"),
+	git_tab_add_button (flow, "go-up-symbolic", _("Push (Hochladen)"),
 			    _("Sendet deine gespeicherten Änderungen zum Server (Push)"),
 			    G_CALLBACK (on_git_push_clicked), d, NULL);
 	git_tab_add_button (flow, "network-server-symbolic", _("Server eintragen …"),
@@ -5399,9 +5447,10 @@ nolphin_workspace_panel_show_git_action (GtkWidget *workspace_panel, NolphinWind
 		const gchar *msg = gtk_entry_get_text (GTK_ENTRY (d->commit_entry));
 
 		if (msg != NULL && *msg != '\0') {
+			d->push_after = FALSE;
 			git_tab_resolve_root (d, git_tab_commit_found);
 		} else {
-			git_tab_set_output (d, _("Bitte eine Commit-Nachricht eingeben und auf „Speichern“ klicken."));
+			git_tab_set_output (d, _("Bitte eine Commit-Nachricht eingeben und auf „Commit“ klicken."));
 			gtk_widget_grab_focus (d->commit_entry);
 		}
 	} else if (g_strcmp0 (action, "pull") == 0) {
