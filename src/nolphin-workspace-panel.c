@@ -4899,7 +4899,7 @@ nolphin_workspace_panel_show_batch_rename (GtkWidget *workspace_panel, NolphinWi
 	workspace_panel_show_page (workspace_panel, window, "rename");
 }
 
-/* Zeigt die Git-Seite (Reiter „Änderungen“). Alle Aktionen laufen
+/* Zeigt die Git-Seite (Reiter „Schnell“). Alle Aktionen laufen
  * dort über ihre eigenen Schaltflächen. */
 void
 nolphin_workspace_panel_show_git_action (GtkWidget *workspace_panel, NolphinWindow *window, const gchar *action)
@@ -4911,7 +4911,7 @@ nolphin_workspace_panel_show_git_action (GtkWidget *workspace_panel, NolphinWind
 	git_page = gtk_stack_get_child_by_name (GTK_STACK (workspace_panel), "git");
 	workspace_panel_show_page (workspace_panel, window, "git");
 	if (git_page != NULL) {
-		nolphin_git_page_show_tab (git_page, "changes");
+		nolphin_git_page_show_tab (git_page, "quick");
 	}
 }
 

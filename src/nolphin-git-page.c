@@ -2615,6 +2615,60 @@ fields_free (gpointer v)
 /* Kompakter Aufbau: häufig Gebrauchtes steht offen, der Rest ist in
  * einklappbaren Gruppen. Beschriftungen der Felder stehen links daneben. */
 
+/* Schnellstart: der übliche Ablauf in wenigen Zeilen - vormerken,
+ * speichern, mit dem Server abgleichen. */
+static const GAct acts_q_stage[] = {
+	A ("Status", "Zeigt, welche Dateien geändert, neu oder gelöscht sind", "git status"),
+	A ("Alle hinzufügen", "Merkt alle Änderungen für den nächsten Commit vor", "git add -A"),
+	A ("Auswahl hinzufügen", "Nur die im Hauptfenster markierten Dateien vormerken", "git add -- {files}"),
+	A ("Unterschiede", "Zeigt die noch nicht gespeicherten Änderungen im Detail", "git diff --no-color"),
+	SEC_ACTS_END
+};
+static const GAct acts_q_commit[] = {
+	A ("Commit", "Speichert alle Änderungen als neuen Stand (merkt selbst vor, falls nötig)",
+	   "git add -A && git commit -m {msg}"),
+	AP ("Commit + Push", "Speichert und lädt sofort zum Server hoch",
+	    "git add -A && git commit -m {msg} && git push --progress"),
+	SEC_ACTS_END
+};
+static const GAct acts_q_server[] = {
+	{ "Synchronisieren", "Holt Neues vom Server und lädt deine Änderungen hoch", "git pull --no-rebase --progress && git push --progress", NULL, GA_PUSH, NULL },
+	A ("Abgleichen", "Zeigt, was lokal und auf dem Server unterschiedlich ist, ohne etwas zu ändern",
+	   "git fetch --progress && git log --oneline --left-right --cherry-pick @{u}...HEAD"),
+	A ("Pull", "Holt Änderungen vom Server", "git pull --no-rebase --progress"),
+	AP ("Push", "Sendet deine gespeicherten Änderungen zum Server", "git push --progress"),
+	A ("Verlauf", "Zeigt die bisherigen Commits", "git log --oneline --graph --decorate -n 30"),
+	SEC_ACTS_END
+};
+static const GAct acts_q_setup[] = {
+	A ("Server eintragen", "Trägt die Adresse eines Servers ein (Remote)", "git remote add {remote} {url}"),
+	AA ("Repository klonen", "Lädt ein Repository vom Server in den aktuellen Ordner", "git clone --progress {url}"),
+	AA ("Repository anlegen", "Legt hier ein neues Git-Repository an", "git init"),
+	SEC_ACTS_END
+};
+
+static void
+build_tab_quick (GitPage *p, GtkWidget *nb)
+{
+	GtkWidget *b = tab_box (p, nb, "quick", _("Schnell"));
+	GtkWidget *g;
+
+	g = group_begin (b, _("1. Änderungen ansehen und vormerken"), TRUE);
+	add_actions (p, g, NULL, acts_q_stage);
+
+	g = group_begin (b, _("2. Speichern (Commit)"), TRUE);
+	add_field (p, g, "msg", _("Nachricht"), _("Kurze Beschreibung der Änderungen …"), NULL);
+	add_actions (p, g, NULL, acts_q_commit);
+
+	g = group_begin (b, _("3. Mit dem Server (z. B. GitHub)"), TRUE);
+	add_actions (p, g, NULL, acts_q_server);
+
+	g = group_begin (b, _("Server eintragen, klonen, neues Repository"), FALSE);
+	add_field (p, g, "remote", _("Name"), "origin", "origin");
+	add_field (p, g, "url", _("Adresse"), "https://github.com/name/projekt.git", NULL);
+	add_actions (p, g, NULL, acts_q_setup);
+}
+
 static void
 build_tab_changes (GitPage *p, GtkWidget *nb)
 {
@@ -2993,6 +3047,7 @@ nolphin_git_page_new (NolphinWindow *window, GtkWidget *quick_tab, GtkWidget *ba
 		gtk_notebook_append_page (GTK_NOTEBOOK (p->notebook), quick_tab, gtk_label_new (_("Schnell")));
 		g_hash_table_insert (p->tab_pages, g_strdup ("quick"), GINT_TO_POINTER (1));
 	}
+	build_tab_quick (p, p->notebook);
 	build_tab_changes (p, p->notebook);
 	build_tab_history (p, p->notebook);
 	build_tab_branches (p, p->notebook);
@@ -3000,7 +3055,7 @@ nolphin_git_page_new (NolphinWindow *window, GtkWidget *quick_tab, GtkWidget *ba
 	build_tab_tags (p, p->notebook);
 	build_tab_conflicts (p, p->notebook);
 	build_tab_github (p, p->notebook);
-	gtk_notebook_set_current_page (GTK_NOTEBOOK (p->notebook), quick_tab != NULL ? 1 : 0);
+	gtk_notebook_set_current_page (GTK_NOTEBOOK (p->notebook), 0);
 
 	logbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 2);
 	bar = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
