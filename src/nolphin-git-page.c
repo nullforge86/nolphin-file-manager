@@ -1298,12 +1298,6 @@ on_list_map (GtkWidget *w, gpointer user_data)
 }
 
 static void
-on_list_refresh_clicked (GtkButton *b, gpointer user_data)
-{
-	list_refresh (user_data);
-}
-
-static void
 refresh_status_done (gpointer user, gboolean ok, GString *out)
 {
 	GitPage *p = user;
@@ -1393,20 +1387,6 @@ tab_box (GitPage *p, GtkWidget *notebook, const gchar *id, const gchar *title)
 }
 
 static void
-add_caption (GtkWidget *box, const gchar *text)
-{
-	GtkWidget *l = gtk_label_new (NULL);
-	gchar *m = g_markup_printf_escaped ("<small><b>%s</b></small>", text);
-
-	gtk_label_set_markup (GTK_LABEL (l), m);
-	g_free (m);
-	gtk_label_set_xalign (GTK_LABEL (l), 0.0);
-	gtk_widget_set_margin_top (l, 8);
-	gtk_style_context_add_class (gtk_widget_get_style_context (l), "dim-label");
-	gtk_box_pack_start (GTK_BOX (box), l, FALSE, FALSE, 0);
-}
-
-static void
 on_fill_from_selection (GtkButton *b, gpointer user_data)
 {
 	GitPage *p = user_data;
@@ -1434,39 +1414,45 @@ static void
 add_field_full (GitPage *p, GtkWidget *box, const gchar *name, const gchar *label, const gchar *placeholder,
 		gboolean multiline, const gchar *initial, gboolean selection_button)
 {
-	GtkWidget *row = gtk_box_new (GTK_ORIENTATION_VERTICAL, 2);
+	GtkWidget *row;
 	GtkWidget *l = gtk_label_new (label);
 	GtkWidget *w;
 	GPtrArray *arr;
 
 	gtk_label_set_xalign (GTK_LABEL (l), 0.0);
 	gtk_style_context_add_class (gtk_widget_get_style_context (l), "dim-label");
-	gtk_box_pack_start (GTK_BOX (row), l, FALSE, FALSE, 0);
 
 	if (multiline) {
 		GtkWidget *sc = gtk_scrolled_window_new (NULL, NULL);
 
+		row = gtk_box_new (GTK_ORIENTATION_VERTICAL, 1);
+		gtk_box_pack_start (GTK_BOX (row), l, FALSE, FALSE, 0);
 		w = gtk_text_view_new ();
 		gtk_text_view_set_wrap_mode (GTK_TEXT_VIEW (w), GTK_WRAP_WORD_CHAR);
 		gtk_scrolled_window_set_shadow_type (GTK_SCROLLED_WINDOW (sc), GTK_SHADOW_IN);
-		gtk_scrolled_window_set_min_content_height (GTK_SCROLLED_WINDOW (sc), 70);
+		gtk_scrolled_window_set_min_content_height (GTK_SCROLLED_WINDOW (sc), 48);
 		gtk_container_add (GTK_CONTAINER (sc), w);
 		gtk_box_pack_start (GTK_BOX (row), sc, FALSE, FALSE, 0);
 	} else {
-		GtkWidget *h = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 4);
-
+		/* Beschriftung links neben dem Feld statt darüber: spart eine Zeile. */
+		row = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+		gtk_label_set_width_chars (GTK_LABEL (l), 13);
+		gtk_label_set_max_width_chars (GTK_LABEL (l), 13);
+		gtk_label_set_ellipsize (GTK_LABEL (l), PANGO_ELLIPSIZE_END);
+		gtk_widget_set_tooltip_text (l, label);
+		gtk_box_pack_start (GTK_BOX (row), l, FALSE, FALSE, 0);
 		w = gtk_entry_new ();
 		gtk_entry_set_placeholder_text (GTK_ENTRY (w), placeholder != NULL ? placeholder : "");
-		gtk_box_pack_start (GTK_BOX (h), w, TRUE, TRUE, 0);
+		gtk_widget_set_tooltip_text (w, label);
+		gtk_box_pack_start (GTK_BOX (row), w, TRUE, TRUE, 0);
 		if (selection_button) {
-			GtkWidget *b = gtk_button_new_with_label (_("Auswahl"));
+			GtkWidget *bt = gtk_button_new_with_label (_("Auswahl"));
 
-			gtk_widget_set_tooltip_text (b, _("Dateien aus dem Hauptfenster übernehmen"));
-			g_object_set_data_full (G_OBJECT (b), "field", g_strdup (name), g_free);
-			g_signal_connect (b, "clicked", G_CALLBACK (on_fill_from_selection), p);
-			gtk_box_pack_start (GTK_BOX (h), b, FALSE, FALSE, 0);
+			gtk_widget_set_tooltip_text (bt, _("Dateien aus dem Hauptfenster übernehmen"));
+			g_object_set_data_full (G_OBJECT (bt), "field", g_strdup (name), g_free);
+			g_signal_connect (bt, "clicked", G_CALLBACK (on_fill_from_selection), p);
+			gtk_box_pack_start (GTK_BOX (row), bt, FALSE, FALSE, 0);
 		}
-		gtk_box_pack_start (GTK_BOX (row), h, FALSE, FALSE, 0);
 	}
 	if (initial != NULL) {
 		widget_set_text (w, initial);
@@ -1505,6 +1491,25 @@ add_check (GitPage *p, GtkWidget *box, const gchar *name, const gchar *label, gb
 	g_hash_table_insert (p->checks, g_strdup (name), c);
 }
 
+/* Einklappbare Gruppe: Überschrift als Pfeil-Zeile, Inhalt darunter. */
+static GtkWidget *
+group_begin (GtkWidget *box, const gchar *caption, gboolean expanded)
+{
+	GtkWidget *exp = gtk_expander_new (NULL);
+	GtkWidget *inner = gtk_box_new (GTK_ORIENTATION_VERTICAL, 4);
+	GtkWidget *l = gtk_label_new (NULL);
+	gchar *m = g_markup_printf_escaped ("<small><b>%s</b></small>", caption);
+
+	gtk_label_set_markup (GTK_LABEL (l), m);
+	g_free (m);
+	gtk_expander_set_label_widget (GTK_EXPANDER (exp), l);
+	gtk_expander_set_expanded (GTK_EXPANDER (exp), expanded);
+	gtk_widget_set_margin_top (inner, 4);
+	gtk_container_add (GTK_CONTAINER (exp), inner);
+	gtk_box_pack_start (GTK_BOX (box), exp, FALSE, FALSE, 0);
+	return inner;
+}
+
 static void
 add_actions (GitPage *p, GtkWidget *box, const gchar *caption, const GAct *acts)
 {
@@ -1512,13 +1517,13 @@ add_actions (GitPage *p, GtkWidget *box, const gchar *caption, const GAct *acts)
 	gint i;
 
 	if (caption != NULL) {
-		add_caption (box, caption);
+		box = group_begin (box, caption, FALSE);
 	}
 	flow = gtk_flow_box_new ();
 	gtk_flow_box_set_selection_mode (GTK_FLOW_BOX (flow), GTK_SELECTION_NONE);
 	gtk_flow_box_set_homogeneous (GTK_FLOW_BOX (flow), FALSE);
-	gtk_flow_box_set_row_spacing (GTK_FLOW_BOX (flow), 4);
-	gtk_flow_box_set_column_spacing (GTK_FLOW_BOX (flow), 4);
+	gtk_flow_box_set_row_spacing (GTK_FLOW_BOX (flow), 3);
+	gtk_flow_box_set_column_spacing (GTK_FLOW_BOX (flow), 3);
 	gtk_flow_box_set_min_children_per_line (GTK_FLOW_BOX (flow), 1);
 	gtk_box_pack_start (GTK_BOX (box), flow, FALSE, FALSE, 0);
 
@@ -1575,13 +1580,9 @@ add_list (GitPage *p, GtkWidget *box, const ListDef *def)
 	gtk_scrolled_window_set_min_content_height (GTK_SCROLLED_WINDOW (sc), def->height);
 	gtk_container_add (GTK_CONTAINER (sc), ls->tree);
 
-	h = gtk_box_new (GTK_ORIENTATION_VERTICAL, 2);
-	gtk_box_pack_start (GTK_BOX (h), sc, TRUE, TRUE, 0);
-	refresh = gtk_button_new_with_label (_("Liste aktualisieren"));
-	gtk_widget_set_halign (refresh, GTK_ALIGN_START);
-	g_signal_connect (refresh, "clicked", G_CALLBACK (on_list_refresh_clicked), ls);
-	gtk_box_pack_start (GTK_BOX (h), refresh, FALSE, FALSE, 0);
-	gtk_box_pack_start (GTK_BOX (box), h, FALSE, FALSE, 0);
+	(void) h;
+	(void) refresh;
+	gtk_box_pack_start (GTK_BOX (box), sc, FALSE, FALSE, 0);
 
 	p->lists = g_list_append (p->lists, ls);
 }
@@ -2475,49 +2476,49 @@ static const GAct acts_release[] = {
 };
 
 static const ListDef list_changes = {
-	"changes", PARSE_PORCELAIN, "git status --porcelain=v1 -z", 2, { "Status", "Datei" }, { NULL, NULL }, TRUE, 150, FALSE
+	"changes", PARSE_PORCELAIN, "git status --porcelain=v1 -z", 2, { "Status", "Datei" }, { NULL, NULL }, TRUE, 110, FALSE
 };
 static const ListDef list_stash = {
-	"stash", PARSE_TAB, "git stash list '--format=%gd%x09%gs'", 2, { "Stash", "Beschreibung" }, { "stash", NULL }, FALSE, 70, FALSE
+	"stash", PARSE_TAB, "git stash list '--format=%gd%x09%gs'", 2, { "Stash", "Beschreibung" }, { "stash", NULL }, FALSE, 50, FALSE
 };
 static const ListDef list_log = {
 	"log", PARSE_TAB, "git log -n 200 --date=short '--format=%h%x09%ad%x09%an%x09%s'", 4,
-	{ "Commit", "Datum", "Autor", "Titel" }, { "commit", NULL, NULL, NULL }, FALSE, 220, FALSE
+	{ "Commit", "Datum", "Autor", "Titel" }, { "commit", NULL, NULL, NULL }, FALSE, 190, FALSE
 };
 static const ListDef list_branches = {
 	"branches", PARSE_TAB, "git branch -a '--format=%(HEAD)%09%(refname:short)%09%(upstream:short)%09%(subject)'", 4,
-	{ "", "Branch", "Verfolgt", "Letzter Commit" }, { NULL, "branch", NULL, NULL }, FALSE, 200, FALSE
+	{ "", "Branch", "Verfolgt", "Letzter Commit" }, { NULL, "branch", NULL, NULL }, FALSE, 150, FALSE
 };
 static const ListDef list_remotes = {
-	"remotes", PARSE_REMOTES, "git remote -v", 2, { "Name", "Adresse" }, { "remote", "url" }, FALSE, 80, FALSE
+	"remotes", PARSE_REMOTES, "git remote -v", 2, { "Name", "Adresse" }, { "remote", "url" }, FALSE, 60, FALSE
 };
 static const ListDef list_tags = {
 	"tags", PARSE_TAB, "git tag --sort=-creatordate '--format=%(refname:short)%09%(objecttype)%09%(creatordate:short)%09%(subject)'", 4,
-	{ "Tag", "Art", "Datum", "Nachricht" }, { "tag", NULL, NULL, NULL }, FALSE, 180, FALSE
+	{ "Tag", "Art", "Datum", "Nachricht" }, { "tag", NULL, NULL, NULL }, FALSE, 130, FALSE
 };
 static const ListDef list_conflicts = {
-	"conflicts", PARSE_TAB, "git diff --name-only --diff-filter=U", 1, { "Datei mit Konflikt" }, { "cfile" }, FALSE, 90, FALSE
+	"conflicts", PARSE_TAB, "git diff --name-only --diff-filter=U", 1, { "Datei mit Konflikt" }, { "cfile" }, FALSE, 60, FALSE
 };
 static const ListDef list_ghrepos = {
-	"ghrepos", PARSE_TAB, "gh repo list -L 50", 3, { "Repository", "Beschreibung", "Sichtbarkeit" }, { "repo", NULL, NULL }, FALSE, 150, TRUE
+	"ghrepos", PARSE_TAB, "gh repo list -L 50", 3, { "Repository", "Beschreibung", "Sichtbarkeit" }, { "repo", NULL, NULL }, FALSE, 110, TRUE
 };
 static const ListDef list_prs = {
 	"prs", PARSE_TAB, "gh pr list -L 50 --state all --json number,state,author,title --jq '.[]|[.number,.state,.author.login,.title]|@tsv'", 4,
-	{ "Nr.", "Status", "Autor", "Titel" }, { "number", NULL, NULL, "title" }, FALSE, 170, TRUE
+	{ "Nr.", "Status", "Autor", "Titel" }, { "number", NULL, NULL, "title" }, FALSE, 120, TRUE
 };
 static const ListDef list_issues = {
 	"issues", PARSE_TAB, "gh issue list -L 50 --state all --json number,state,title,labels --jq '.[]|[.number,.state,.title,([.labels[].name]|join(\",\"))]|@tsv'", 4,
-	{ "Nr.", "Status", "Titel", "Labels" }, { "number", NULL, "title", NULL }, FALSE, 170, TRUE
+	{ "Nr.", "Status", "Titel", "Labels" }, { "number", NULL, "title", NULL }, FALSE, 120, TRUE
 };
 static const ListDef list_workflows = {
-	"workflows", PARSE_TAB, "gh workflow list --all", 3, { "Workflow", "Status", "ID" }, { NULL, NULL, "workflow" }, FALSE, 90, TRUE
+	"workflows", PARSE_TAB, "gh workflow list --all", 3, { "Workflow", "Status", "ID" }, { NULL, NULL, "workflow" }, FALSE, 60, TRUE
 };
 static const ListDef list_runs = {
 	"runs", PARSE_TAB, "gh run list -L 20 --json databaseId,status,conclusion,workflowName,displayTitle --jq '.[]|[.databaseId,.status,(.conclusion//\"-\"),.workflowName,.displayTitle]|@tsv'", 5,
-	{ "Lauf", "Status", "Ergebnis", "Workflow", "Titel" }, { "run", NULL, NULL, NULL, NULL }, FALSE, 150, TRUE
+	{ "Lauf", "Status", "Ergebnis", "Workflow", "Titel" }, { "run", NULL, NULL, NULL, NULL }, FALSE, 100, TRUE
 };
 static const ListDef list_releases = {
-	"releases", PARSE_TAB, "gh release list -L 30", 4, { "Titel", "Art", "Tag", "Datum" }, { NULL, NULL, "tag", NULL }, FALSE, 150, TRUE
+	"releases", PARSE_TAB, "gh release list -L 30", 4, { "Titel", "Art", "Tag", "Datum" }, { NULL, NULL, "tag", NULL }, FALSE, 100, TRUE
 };
 
 /* ------------------------------------------------------------------ */
@@ -2611,91 +2612,135 @@ fields_free (gpointer v)
 	g_ptr_array_free (v, TRUE);
 }
 
+/* Kompakter Aufbau: häufig Gebrauchtes steht offen, der Rest ist in
+ * einklappbaren Gruppen. Beschriftungen der Felder stehen links daneben. */
+
 static void
 build_tab_changes (GitPage *p, GtkWidget *nb)
 {
 	GtkWidget *b = tab_box (p, nb, "changes", _("Änderungen"));
+	GtkWidget *g;
 
 	add_list (p, b, &list_changes);
-	add_actions (p, b, _("Ansehen"), acts_view);
-	add_actions (p, b, _("Vormerken (Staging)"), acts_stage);
-	add_field (p, b, "pathto", _("Neuer Pfad (für Verschieben/Umbenennen)"), "z. B. neuer-name.txt", NULL);
-	add_actions (p, b, _("Dateien"), acts_files);
-	add_field (p, b, "msg", _("Nachricht (Commit / Stash)"), _("Kurze Beschreibung der Änderungen …"), NULL);
-	add_actions (p, b, _("Commit"), acts_commit);
-	add_field (p, b, "target", _("Ziel (für Reset, z. B. HEAD~1 oder Commit-Hash)"), "HEAD~1", NULL);
-	add_actions (p, b, _("Zurücksetzen"), acts_reset);
-	add_list (p, b, &list_stash);
-	add_actions (p, b, _("Zwischenspeicher (Stash)"), acts_stash);
-	add_actions (p, b, _("Nicht versionierte Dateien"), acts_clean);
-	add_field (p, b, "url", _("Adresse (zum Klonen / für Remote)"), "https://github.com/name/projekt.git", NULL);
-	add_actions (p, b, _("Repository"), acts_repo);
+
+	g = group_begin (b, _("Vormerken und ansehen"), TRUE);
+	add_actions (p, g, NULL, acts_stage);
+	add_actions (p, g, NULL, acts_view);
+
+	g = group_begin (b, _("Commit"), TRUE);
+	add_field (p, g, "msg", _("Nachricht"), _("Kurze Beschreibung der Änderungen …"), NULL);
+	add_actions (p, g, NULL, acts_commit);
+
+	g = group_begin (b, _("Dateien verschieben, löschen, verwerfen"), FALSE);
+	add_field (p, g, "pathto", _("Neuer Pfad"), "z. B. neuer-name.txt", NULL);
+	add_actions (p, g, NULL, acts_files);
+
+	g = group_begin (b, _("Zurücksetzen (Reset)"), FALSE);
+	add_field (p, g, "target", _("Ziel"), "HEAD~1 oder Commit-Hash", NULL);
+	add_actions (p, g, NULL, acts_reset);
+
+	g = group_begin (b, _("Zwischenspeicher (Stash)"), FALSE);
+	add_list (p, g, &list_stash);
+	add_actions (p, g, NULL, acts_stash);
+
+	g = group_begin (b, _("Nicht versionierte Dateien bereinigen"), FALSE);
+	add_actions (p, g, NULL, acts_clean);
+
+	g = group_begin (b, _("Repository anlegen oder klonen"), FALSE);
+	add_field (p, g, "url", _("Adresse"), "https://github.com/name/projekt.git", NULL);
+	add_actions (p, g, NULL, acts_repo);
 }
 
 static void
 build_tab_history (GitPage *p, GtkWidget *nb)
 {
 	GtkWidget *b = tab_box (p, nb, "history", _("Verlauf"));
+	GtkWidget *g;
 
 	add_list (p, b, &list_log);
-	add_field (p, b, "commit", _("Commit (Hash)"), _("aus der Liste wählen"), NULL);
-	add_actions (p, b, _("Commit"), acts_hist);
+	g = group_begin (b, _("Gewählter Commit"), TRUE);
+	add_field (p, g, "commit", _("Commit"), _("aus der Liste wählen"), NULL);
+	add_actions (p, g, NULL, acts_hist);
 }
 
 static void
 build_tab_branches (GitPage *p, GtkWidget *nb)
 {
 	GtkWidget *b = tab_box (p, nb, "branches", _("Branches"));
+	GtkWidget *g;
 
 	add_list (p, b, &list_branches);
-	add_field (p, b, "branch", _("Branch (aus der Liste)"), "main", NULL);
-	add_field (p, b, "newname", _("Neuer Name"), NULL, NULL);
-	add_actions (p, b, _("Verwalten"), acts_branch);
-	add_field (p, b, "target", _("Zweiter Branch (zum Vergleichen)"), "main", NULL);
-	add_actions (p, b, _("Zusammenführen"), acts_merge);
-	add_actions (p, b, _("Vergleichen"), acts_compare);
-	add_actions (p, b, _("Standard-Branch"), acts_default);
+
+	g = group_begin (b, _("Branch verwalten"), TRUE);
+	add_field (p, g, "branch", _("Branch"), "aus der Liste wählen", NULL);
+	add_field (p, g, "newname", _("Neuer Name"), NULL, NULL);
+	add_actions (p, g, NULL, acts_branch);
+
+	g = group_begin (b, _("Zusammenführen und neu aufbauen"), FALSE);
+	add_actions (p, g, NULL, acts_merge);
+
+	g = group_begin (b, _("Branches vergleichen"), FALSE);
+	add_field (p, g, "target", _("Zweiter Branch"), "main", NULL);
+	add_actions (p, g, NULL, acts_compare);
+
+	g = group_begin (b, _("Standard-Branch festlegen"), FALSE);
+	add_actions (p, g, NULL, acts_default);
 }
 
 static void
 build_tab_server (GitPage *p, GtkWidget *nb)
 {
 	GtkWidget *b = tab_box (p, nb, "server", _("Server"));
+	GtkWidget *g;
 
-	add_list (p, b, &list_remotes);
-	add_field (p, b, "remote", _("Remote (Name)"), "origin", "origin");
-	add_field (p, b, "url", _("Adresse (URL)"), "https://github.com/name/projekt.git", NULL);
-	add_field (p, b, "newname", _("Neuer Name"), NULL, NULL);
-	add_actions (p, b, _("Verbindungen"), acts_remote);
-	add_field (p, b, "branch", _("Branch"), "main", NULL);
-	add_actions (p, b, _("Abrufen"), acts_fetch);
-	add_actions (p, b, _("Pull"), acts_pull);
-	add_actions (p, b, _("Vergleichen und prüfen"), acts_sync);
-	add_field (p, b, "tag", _("Tag (zum Hochladen)"), "v1.0.0", NULL);
-	add_field (p, b, "refs", _("Refs für atomaren Push (Leerzeichen getrennt)"), "main v1.0.0", NULL);
-	add_actions (p, b, _("Push"), acts_push);
+	g = group_begin (b, _("Push (hochladen)"), TRUE);
+	add_field (p, g, "remote", _("Remote"), "origin", "origin");
+	add_field (p, g, "branch", _("Branch"), "main", NULL);
+	add_actions (p, g, NULL, acts_push);
+
+	g = group_begin (b, _("Pull und Abrufen"), TRUE);
+	add_actions (p, g, NULL, acts_pull);
+	add_actions (p, g, NULL, acts_fetch);
+
+	g = group_begin (b, _("Vergleichen und prüfen"), FALSE);
+	add_actions (p, g, NULL, acts_sync);
+
+	g = group_begin (b, _("Verbindungen (Remotes)"), FALSE);
+	add_list (p, g, &list_remotes);
+	add_field (p, g, "url", _("Adresse"), "https://github.com/name/projekt.git", NULL);
+	add_field (p, g, "newname", _("Neuer Name"), NULL, NULL);
+	add_actions (p, g, NULL, acts_remote);
+
+	g = group_begin (b, _("Tag und atomarer Push"), FALSE);
+	add_field (p, g, "tag", _("Tag"), "v1.0.0", NULL);
+	add_field (p, g, "refs", _("Refs"), "main v1.0.0 (Leerzeichen getrennt)", NULL);
 }
 
 static void
 build_tab_tags (GitPage *p, GtkWidget *nb)
 {
 	GtkWidget *b = tab_box (p, nb, "tags", _("Tags"));
+	GtkWidget *g;
 
 	add_list (p, b, &list_tags);
-	add_field (p, b, "tag", _("Tag (Version)"), "v1.0.0", NULL);
-	add_field (p, b, "tagmsg", _("Nachricht (für annotierten Tag)"), NULL, NULL);
-	add_field (p, b, "commit", _("Commit (leer = aktueller Stand)"), NULL, NULL);
-	add_actions (p, b, _("Versionsnummer vorschlagen"), acts_tag_ver);
-	add_actions (p, b, _("Tags"), acts_tag);
-	add_field (p, b, "remote", _("Remote"), "origin", "origin");
-	add_actions (p, b, _("Mit GitHub"), acts_tag_srv);
+
+	g = group_begin (b, _("Tag erstellen und verwalten"), TRUE);
+	add_field (p, g, "tag", _("Tag / Version"), "v1.0.0", NULL);
+	add_field (p, g, "tagmsg", _("Nachricht"), "für annotierten Tag", NULL);
+	add_field (p, g, "commit", _("Commit"), "leer = aktueller Stand", NULL);
+	add_actions (p, g, NULL, acts_tag_ver);
+	add_actions (p, g, NULL, acts_tag);
+
+	g = group_begin (b, _("Mit GitHub"), FALSE);
+	add_field (p, g, "remote", _("Remote"), "origin", "origin");
+	add_actions (p, g, NULL, acts_tag_srv);
 }
 
 static void
 build_tab_conflicts (GitPage *p, GtkWidget *nb)
 {
 	GtkWidget *b = tab_box (p, nb, "conflicts", _("Konflikte"));
-	GtkWidget *h, *sc1, *sc2, *sc3, *l1, *l2, *l3, *v1, *v2, *col1, *col2;
+	GtkWidget *g, *h, *sc1, *sc2, *sc3, *v1, *v2, *col1, *col2, *l1, *l2, *l3;
 	GtkTextBuffer *rb;
 	GPtrArray *arr;
 
@@ -2704,14 +2749,33 @@ build_tab_conflicts (GitPage *p, GtkWidget *nb)
 	arr = g_hash_table_lookup (p->fields, "cfile");
 	g_signal_connect (g_ptr_array_index (arr, 0), "changed", G_CALLBACK (on_cfile_changed), p);
 
-	add_actions (p, b, _("Ganze Datei / Abschluss"), acts_conf_file);
+	l3 = gtk_label_new (_("Blau = lokal, Orange = Remote. Cursor in einen Bereich setzen und „Bereich: …“ wählen, oder von Hand bearbeiten."));
+	gtk_label_set_line_wrap (GTK_LABEL (l3), TRUE);
+	gtk_label_set_xalign (GTK_LABEL (l3), 0.0);
+	gtk_style_context_add_class (gtk_widget_get_style_context (l3), "dim-label");
+	gtk_box_pack_start (GTK_BOX (b), l3, FALSE, FALSE, 0);
 
-	add_caption (b, _("Lokal und Remote nebeneinander"));
+	p->conf_result = gtk_text_view_new ();
+	gtk_text_view_set_monospace (GTK_TEXT_VIEW (p->conf_result), TRUE);
+	rb = gtk_text_view_get_buffer (GTK_TEXT_VIEW (p->conf_result));
+	gtk_text_buffer_create_tag (rb, "ours", "background-rgba", &(GdkRGBA){ 0.30, 0.55, 1.0, 0.25 }, NULL);
+	gtk_text_buffer_create_tag (rb, "theirs", "background-rgba", &(GdkRGBA){ 1.0, 0.65, 0.2, 0.25 }, NULL);
+	gtk_text_buffer_create_tag (rb, "mark", "weight", PANGO_WEIGHT_BOLD,
+				    "background-rgba", &(GdkRGBA){ 0.6, 0.6, 0.6, 0.35 }, NULL);
+	g_signal_connect_swapped (rb, "changed", G_CALLBACK (conflict_colorize), rb);
+	sc3 = gtk_scrolled_window_new (NULL, NULL);
+	gtk_scrolled_window_set_shadow_type (GTK_SCROLLED_WINDOW (sc3), GTK_SHADOW_IN);
+	gtk_scrolled_window_set_min_content_height (GTK_SCROLLED_WINDOW (sc3), 150);
+	gtk_container_add (GTK_CONTAINER (sc3), p->conf_result);
+	gtk_box_pack_start (GTK_BOX (b), sc3, FALSE, FALSE, 0);
+	add_actions (p, b, NULL, acts_conf);
+
+	g = group_begin (b, _("Lokal und Remote nebeneinander"), FALSE);
 	h = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
 	col1 = gtk_box_new (GTK_ORIENTATION_VERTICAL, 2);
 	col2 = gtk_box_new (GTK_ORIENTATION_VERTICAL, 2);
 	l1 = gtk_label_new (_("Lokal (deine Version)"));
-	l2 = gtk_label_new (_("Remote (Version vom Server)"));
+	l2 = gtk_label_new (_("Remote (vom Server)"));
 	gtk_label_set_xalign (GTK_LABEL (l1), 0.0);
 	gtk_label_set_xalign (GTK_LABEL (l2), 0.0);
 	v1 = gtk_text_view_new ();
@@ -2726,10 +2790,10 @@ build_tab_conflicts (GitPage *p, GtkWidget *nb)
 	sc2 = gtk_scrolled_window_new (NULL, NULL);
 	gtk_scrolled_window_set_shadow_type (GTK_SCROLLED_WINDOW (sc1), GTK_SHADOW_IN);
 	gtk_scrolled_window_set_shadow_type (GTK_SCROLLED_WINDOW (sc2), GTK_SHADOW_IN);
-	gtk_scrolled_window_set_min_content_height (GTK_SCROLLED_WINDOW (sc1), 140);
-	gtk_scrolled_window_set_min_content_height (GTK_SCROLLED_WINDOW (sc2), 140);
-	gtk_scrolled_window_set_min_content_width (GTK_SCROLLED_WINDOW (sc1), 160);
-	gtk_scrolled_window_set_min_content_width (GTK_SCROLLED_WINDOW (sc2), 160);
+	gtk_scrolled_window_set_min_content_height (GTK_SCROLLED_WINDOW (sc1), 110);
+	gtk_scrolled_window_set_min_content_height (GTK_SCROLLED_WINDOW (sc2), 110);
+	gtk_scrolled_window_set_min_content_width (GTK_SCROLLED_WINDOW (sc1), 140);
+	gtk_scrolled_window_set_min_content_width (GTK_SCROLLED_WINDOW (sc2), 140);
 	gtk_container_add (GTK_CONTAINER (sc1), v1);
 	gtk_container_add (GTK_CONTAINER (sc2), v2);
 	gtk_box_pack_start (GTK_BOX (col1), l1, FALSE, FALSE, 0);
@@ -2738,28 +2802,10 @@ build_tab_conflicts (GitPage *p, GtkWidget *nb)
 	gtk_box_pack_start (GTK_BOX (col2), sc2, TRUE, TRUE, 0);
 	gtk_box_pack_start (GTK_BOX (h), col1, TRUE, TRUE, 0);
 	gtk_box_pack_start (GTK_BOX (h), col2, TRUE, TRUE, 0);
-	gtk_box_pack_start (GTK_BOX (b), h, FALSE, FALSE, 0);
+	gtk_box_pack_start (GTK_BOX (g), h, FALSE, FALSE, 0);
 
-	add_caption (b, _("Ergebnis (bearbeitbar) – Konfliktbereiche sind farbig markiert"));
-	l3 = gtk_label_new (_("Blau = lokal, Orange = Remote. Cursor in einen Bereich setzen und „Bereich: …“ wählen, oder von Hand bearbeiten."));
-	gtk_label_set_line_wrap (GTK_LABEL (l3), TRUE);
-	gtk_label_set_xalign (GTK_LABEL (l3), 0.0);
-	gtk_style_context_add_class (gtk_widget_get_style_context (l3), "dim-label");
-	gtk_box_pack_start (GTK_BOX (b), l3, FALSE, FALSE, 0);
-	p->conf_result = gtk_text_view_new ();
-	gtk_text_view_set_monospace (GTK_TEXT_VIEW (p->conf_result), TRUE);
-	rb = gtk_text_view_get_buffer (GTK_TEXT_VIEW (p->conf_result));
-	gtk_text_buffer_create_tag (rb, "ours", "background-rgba", &(GdkRGBA){ 0.30, 0.55, 1.0, 0.25 }, NULL);
-	gtk_text_buffer_create_tag (rb, "theirs", "background-rgba", &(GdkRGBA){ 1.0, 0.65, 0.2, 0.25 }, NULL);
-	gtk_text_buffer_create_tag (rb, "mark", "weight", PANGO_WEIGHT_BOLD,
-				    "background-rgba", &(GdkRGBA){ 0.6, 0.6, 0.6, 0.35 }, NULL);
-	g_signal_connect_swapped (rb, "changed", G_CALLBACK (conflict_colorize), rb);
-	sc3 = gtk_scrolled_window_new (NULL, NULL);
-	gtk_scrolled_window_set_shadow_type (GTK_SCROLLED_WINDOW (sc3), GTK_SHADOW_IN);
-	gtk_scrolled_window_set_min_content_height (GTK_SCROLLED_WINDOW (sc3), 200);
-	gtk_container_add (GTK_CONTAINER (sc3), p->conf_result);
-	gtk_box_pack_start (GTK_BOX (b), sc3, FALSE, FALSE, 0);
-	add_actions (p, b, _("Konflikt lösen"), acts_conf);
+	g = group_begin (b, _("Ganze Datei übernehmen, Merge abschließen"), FALSE);
+	add_actions (p, g, NULL, acts_conf_file);
 }
 
 static void
@@ -2767,7 +2813,7 @@ build_tab_github (GitPage *p, GtkWidget *nb)
 {
 	GtkWidget *outer = tab_box (p, nb, "github", _("GitHub"));
 	GtkWidget *inner = gtk_notebook_new ();
-	GtkWidget *b;
+	GtkWidget *b, *g;
 
 	p->gh_status = gtk_label_new ("");
 	gtk_label_set_xalign (GTK_LABEL (p->gh_status), 0.0);
@@ -2782,66 +2828,93 @@ build_tab_github (GitPage *p, GtkWidget *nb)
 	/* Repository */
 	b = tab_box (p, inner, "gh-repo", _("Repository"));
 	add_list (p, b, &list_ghrepos);
-	add_field (p, b, "repo", _("Repository (Besitzer/Name)"), "name/projekt", NULL);
-	add_field (p, b, "desc", _("Beschreibung"), NULL, NULL);
-	add_field (p, b, "query", _("Suche"), NULL, NULL);
-	add_actions (p, b, _("Anlegen"), acts_gh_repo);
-	add_actions (p, b, _("Verwalten"), acts_gh_repo2);
-	add_field (p, b, "path", _("Pfad im Repository"), "README.md", NULL);
-	add_field (p, b, "rfmsg", _("Commit-Nachricht (Datei)"), NULL, NULL);
-	add_text (p, b, "filebody", _("Dateiinhalt (zum Bearbeiten)"));
-	add_actions (p, b, _("Dateien im Repository"), acts_gh_files);
-	add_field (p, b, "user", _("Benutzername"), NULL, NULL);
-	add_field (p, b, "perm", _("Berechtigung"), "pull | triage | push | maintain | admin", "push");
-	add_actions (p, b, _("Collaborators und Rechte"), acts_gh_collab);
+	g = group_begin (b, _("Anlegen und verwalten"), TRUE);
+	add_field (p, g, "repo", _("Repository"), "Besitzer/Name", NULL);
+	add_field (p, g, "desc", _("Beschreibung"), NULL, NULL);
+	add_field (p, g, "query", _("Suche"), NULL, NULL);
+	add_actions (p, g, NULL, acts_gh_repo);
+	add_actions (p, g, NULL, acts_gh_repo2);
+	g = group_begin (b, _("Dateien im Repository"), FALSE);
+	add_field (p, g, "path", _("Pfad"), "README.md", NULL);
+	add_field (p, g, "rfmsg", _("Commit-Text"), NULL, NULL);
+	add_text (p, g, "filebody", _("Dateiinhalt (zum Bearbeiten)"));
+	add_actions (p, g, NULL, acts_gh_files);
+	g = group_begin (b, _("Collaborators und Rechte"), FALSE);
+	add_field (p, g, "user", _("Benutzer"), NULL, NULL);
+	add_field (p, g, "perm", _("Berechtigung"), "pull | triage | push | maintain | admin", "push");
+	add_actions (p, g, NULL, acts_gh_collab);
 
 	/* Pull Requests */
 	b = tab_box (p, inner, "gh-pr", _("Pull Requests"));
 	add_list (p, b, &list_prs);
-	add_field (p, b, "number", _("Nummer"), NULL, NULL);
-	add_field (p, b, "title", _("Titel"), NULL, NULL);
-	add_text (p, b, "body", _("Beschreibung / Kommentar"));
-	add_field (p, b, "base", _("Ziel-Branch (base)"), "main", NULL);
-	add_field (p, b, "head", _("Quell-Branch (head, leer = aktueller)"), NULL, NULL);
-	add_actions (p, b, _("Pull Request"), acts_pr);
-	add_actions (p, b, _("Zusammenführen"), acts_pr_merge);
-	add_actions (p, b, _("Überprüfen"), acts_pr_review);
+	g = group_begin (b, _("Pull Request"), TRUE);
+	add_field (p, g, "number", _("Nummer"), NULL, NULL);
+	add_field (p, g, "title", _("Titel"), NULL, NULL);
+	add_text (p, g, "body", _("Beschreibung / Kommentar"));
+	add_field (p, g, "base", _("Ziel (base)"), "main", NULL);
+	add_field (p, g, "head", _("Quelle (head)"), "leer = aktueller Branch", NULL);
+	add_actions (p, g, NULL, acts_pr);
+	g = group_begin (b, _("Zusammenführen"), FALSE);
+	add_actions (p, g, NULL, acts_pr_merge);
+	g = group_begin (b, _("Überprüfen und kommentieren"), FALSE);
+	add_actions (p, g, NULL, acts_pr_review);
 
 	/* Issues */
 	b = tab_box (p, inner, "gh-issues", _("Issues"));
 	add_list (p, b, &list_issues);
-	add_field (p, b, "number", _("Nummer"), NULL, NULL);
-	add_field (p, b, "title", _("Titel"), NULL, NULL);
-	add_text (p, b, "body", _("Beschreibung / Kommentar"));
-	add_field (p, b, "label", _("Label"), "bug", NULL);
-	add_field (p, b, "assignee", _("Zugewiesen an (Benutzername)"), NULL, NULL);
-	add_field (p, b, "milestone", _("Meilenstein (Titel)"), NULL, NULL);
-	add_field (p, b, "query", _("Suche"), NULL, NULL);
-	add_actions (p, b, _("Issue"), acts_issue);
-	add_actions (p, b, _("Labels, Zuweisung, Meilensteine"), acts_issue_meta);
+	g = group_begin (b, _("Issue"), TRUE);
+	add_field (p, g, "number", _("Nummer"), NULL, NULL);
+	add_field (p, g, "title", _("Titel"), NULL, NULL);
+	add_text (p, g, "body", _("Beschreibung / Kommentar"));
+	add_field (p, g, "query", _("Suche"), NULL, NULL);
+	add_actions (p, g, NULL, acts_issue);
+	g = group_begin (b, _("Labels, Zuweisung, Meilensteine"), FALSE);
+	add_field (p, g, "label", _("Label"), "bug", NULL);
+	add_field (p, g, "assignee", _("Zugewiesen an"), "Benutzername", NULL);
+	add_field (p, g, "milestone", _("Meilenstein"), "Titel", NULL);
+	add_actions (p, g, NULL, acts_issue_meta);
 
 	/* Actions */
 	b = tab_box (p, inner, "gh-actions", _("Actions"));
-	add_list (p, b, &list_workflows);
-	add_field (p, b, "workflow", _("Workflow (Name oder ID)"), NULL, NULL);
-	add_field (p, b, "ref", _("Branch/Tag (optional)"), NULL, NULL);
 	add_list (p, b, &list_runs);
-	add_field (p, b, "run", _("Ausführung (Nummer)"), NULL, NULL);
-	add_actions (p, b, _("Workflows und Ausführungen"), acts_actions);
+	g = group_begin (b, _("Workflows und Ausführungen"), TRUE);
+	add_field (p, g, "run", _("Ausführung"), "Nummer aus der Liste", NULL);
+	add_field (p, g, "workflow", _("Workflow"), "Name oder ID", NULL);
+	add_field (p, g, "ref", _("Branch/Tag"), "optional", NULL);
+	add_actions (p, g, NULL, acts_actions);
+	g = group_begin (b, _("Alle Workflows"), FALSE);
+	add_list (p, g, &list_workflows);
 
 	/* Releases */
 	b = tab_box (p, inner, "gh-releases", _("Releases"));
 	add_list (p, b, &list_releases);
-	add_field (p, b, "tag", _("Tag / Version"), "v1.0.0", NULL);
-	add_field (p, b, "title", _("Titel"), NULL, NULL);
-	add_text (p, b, "notes", _("Release Notes"));
-	add_field_full (p, b, "file", _("Anhänge (Dateipfade, Leerzeichen getrennt)"), "/pfad/datei.deb", FALSE, NULL, TRUE);
-	add_check (p, b, "gen", _("Notes automatisch erzeugen"), FALSE);
-	add_check (p, b, "draft", _("Entwurf"), FALSE);
-	add_check (p, b, "pre", _("Vorabversion"), FALSE);
-	add_actions (p, b, _("Versionsnummer vorschlagen"), acts_tag_ver);
-	add_actions (p, b, _("Release"), acts_release);
+	g = group_begin (b, _("Release"), TRUE);
+	add_field (p, g, "tag", _("Tag / Version"), "v1.0.0", NULL);
+	add_field (p, g, "title", _("Titel"), NULL, NULL);
+	add_text (p, g, "notes", _("Release Notes"));
+	add_field_full (p, g, "file", _("Anhänge"), "Dateipfade, Leerzeichen getrennt", FALSE, NULL, TRUE);
+	add_check (p, g, "gen", _("Notes automatisch erzeugen"), FALSE);
+	add_check (p, g, "draft", _("Entwurf"), FALSE);
+	add_check (p, g, "pre", _("Vorabversion"), FALSE);
+	add_actions (p, g, NULL, acts_tag_ver);
+	add_actions (p, g, NULL, acts_release);
 }
+
+/* Werkzeugleiste: die drei häufigsten Server-Aktionen immer sichtbar. */
+static const GAct acts_toolbar[] = {
+	A ("↓ Fetch", "Neues vom Server holen, nichts ändern", "git fetch --all --prune --progress"),
+	A ("⇣ Pull", "Holen und zusammenführen", "git pull --no-rebase --progress"),
+	AP ("⇡ Push", "Aktuellen Branch hochladen (Verknüpfung wird bei Bedarf gesetzt)", "git push --progress"),
+	A ("Status", "Vollständiger Git-Status", "git status"),
+	SEC_ACTS_END
+};
+
+static const gchar *git_page_css =
+	".nolphin-git-page button { padding: 1px 8px; min-height: 22px; min-width: 0; }"
+	".nolphin-git-page entry { padding: 1px 6px; min-height: 22px; }"
+	".nolphin-git-page treeview { font-size: 95%; }"
+	".nolphin-git-page notebook > header > tabs > tab { padding: 3px 8px; min-height: 0; }"
+	".nolphin-git-page expander title { padding: 2px 0; }";
 
 GtkWidget *
 nolphin_git_page_new (NolphinWindow *window, GtkWidget *quick_tab, GtkWidget *back_button)
@@ -2882,6 +2955,22 @@ nolphin_git_page_new (NolphinWindow *window, GtkWidget *quick_tab, GtkWidget *ba
 	gtk_box_pack_start (GTK_BOX (header), refresh, FALSE, FALSE, 0);
 	gtk_box_pack_start (GTK_BOX (root), header, FALSE, FALSE, 0);
 
+	{
+		GtkWidget *tb = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+		GtkCssProvider *css = gtk_css_provider_new ();
+
+		gtk_widget_set_margin_start (tb, 8);
+		gtk_widget_set_margin_end (tb, 8);
+		add_actions (p, tb, NULL, acts_toolbar);
+		gtk_box_pack_start (GTK_BOX (root), tb, FALSE, FALSE, 0);
+
+		gtk_style_context_add_class (gtk_widget_get_style_context (root), "nolphin-git-page");
+		gtk_css_provider_load_from_data (css, git_page_css, -1, NULL);
+		gtk_style_context_add_provider_for_screen (gdk_screen_get_default (), GTK_STYLE_PROVIDER (css),
+							   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+		g_object_unref (css);
+	}
+
 	/* Ausgabefeld (vor den Reitern anlegen: Schaltflächen schreiben hinein) */
 	p->log_view = gtk_text_view_new ();
 	gtk_text_view_set_editable (GTK_TEXT_VIEW (p->log_view), FALSE);
@@ -2911,6 +3000,7 @@ nolphin_git_page_new (NolphinWindow *window, GtkWidget *quick_tab, GtkWidget *ba
 	build_tab_tags (p, p->notebook);
 	build_tab_conflicts (p, p->notebook);
 	build_tab_github (p, p->notebook);
+	gtk_notebook_set_current_page (GTK_NOTEBOOK (p->notebook), quick_tab != NULL ? 1 : 0);
 
 	logbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 2);
 	bar = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
@@ -2961,5 +3051,15 @@ nolphin_git_page_show_tab (GtkWidget *git_page, const gchar *tab_id)
 
 	if (p != NULL && tab_id != NULL) {
 		goto_tab (p, tab_id);
+	}
+}
+
+void
+nolphin_git_page_log (GtkWidget *git_page, const gchar *text)
+{
+	GitPage *p = g_object_get_data (G_OBJECT (git_page), "nolphin-git-page");
+
+	if (p != NULL && text != NULL) {
+		log_line (p, NULL, "%s", text);
 	}
 }

@@ -23,6 +23,9 @@ GtkWidget *nolphin_git_page_new (NolphinWindow *window,
  * "server", "tags", "conflicts", "github". */
 void       nolphin_git_page_show_tab (GtkWidget *git_page, const gchar *tab_id);
 
+/* Schreibt @text ins Ausgabefeld der Seite. */
+void       nolphin_git_page_log (GtkWidget *git_page, const gchar *text);
+
 G_END_DECLS
 
 #endif /* NOLPHIN_GIT_PAGE_H */
