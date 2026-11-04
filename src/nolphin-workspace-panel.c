@@ -32,6 +32,7 @@
 #include "nolphin-gid.h"
 #include "nolphin-phone.h"
 #include "nolphin-terminal.h"
+#include "nolphin-git-page.h"
 #include "nolphin-view.h"
 #include "nolphin-window-pane.h"
 #include "nolphin-window-slot.h"
@@ -1279,7 +1280,7 @@ build_git_tab (NolphinWindow *window)
 	box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
 	gtk_container_set_border_width (GTK_CONTAINER (box), 12);
 	gtk_container_add (GTK_CONTAINER (scroller), box);
-	gtk_box_pack_start (GTK_BOX (box), build_back_to_preview_button (window), FALSE, FALSE, 0);
+	
 
 	/* Reihenfolge entspricht dem Arbeitsablauf: ansehen, speichern,
 	 * mit dem Server abgleichen. */
@@ -5093,7 +5094,15 @@ nolphin_workspace_panel_new (NolphinWindow *window, GtkWidget *preview_widget, G
 
 	add_stack_page (GTK_STACK (stack), build_search_tab (window), "search");
 	add_stack_page (GTK_STACK (stack), build_batch_rename_tab (window), "rename");
-	add_stack_page (GTK_STACK (stack), build_git_tab (window), "git");
+	{
+		GtkWidget *quick = build_git_tab (window);
+		GitTabData *quick_data = g_object_get_data (G_OBJECT (quick), "git-tab-data");
+		GtkWidget *git_page = nolphin_git_page_new (window, quick, build_back_to_preview_button (window));
+
+		/* Die Schnell-Aktionen finden ihre Daten über die Seite. */
+		g_object_set_data (G_OBJECT (git_page), "git-tab-data", quick_data);
+		add_stack_page (GTK_STACK (stack), git_page, "git");
+	}
 	add_stack_page (GTK_STACK (stack), build_workspaces_tab (window), "workspaces");
 	add_stack_page (GTK_STACK (stack), nolphin_diagnostics_page_new (window), "diagnostics");
 	add_stack_page (GTK_STACK (stack), nolphin_duplicates_page_new (window), "duplicates");

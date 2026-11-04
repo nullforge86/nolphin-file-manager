@@ -96,6 +96,7 @@ nolphinCommon_sources = [
   'nolphin-phone-tls.c',
   'nolphin-qr.c',
   'nolphin-markdown-view.c',
+  'nolphin-git-page.c',
   'nolphin-workspace-panel.c',
   'nolphin-x-content-bar.c',
 ]
