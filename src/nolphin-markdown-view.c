@@ -1329,6 +1329,59 @@ emit_verbatim (Ctx *c, const gchar *text, gint quote)
 	g_strfreev (lines);
 }
 
+/* Sprungmarke für die Überschrift ab @start: Name wie bei GitHub (klein,
+ * Leerzeichen zu "-", Satzzeichen entfallen, Doppelte mit -1, -2 ...). */
+#define ANCHOR_PREFIX "md-anchor:"
+#define SLUGS_KEY "nolphin-md-slugs"
+
+static gchar *
+heading_slug (const gchar *text)
+{
+	GString *out = g_string_new (NULL);
+	gchar *low = g_utf8_strdown (text, -1);
+	const gchar *p;
+
+	for (p = low; *p != '\0'; p = g_utf8_next_char (p)) {
+		gunichar ch = g_utf8_get_char (p);
+
+		if (g_unichar_isalnum (ch) || ch == '-' || ch == '_')
+			g_string_append_unichar (out, ch);
+		else if (g_unichar_isspace (ch))
+			g_string_append_c (out, '-');
+	}
+	g_free (low);
+	return g_string_free (out, FALSE);
+}
+
+static void
+register_heading_anchor (Ctx *c, gint start)
+{
+	GtkTextIter a, b;
+	GHashTable *slugs = g_object_get_data (G_OBJECT (c->buffer), SLUGS_KEY);
+	gchar *text, *slug, *name;
+	gint count;
+
+	if (slugs == NULL) {
+		slugs = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+		g_object_set_data_full (G_OBJECT (c->buffer), SLUGS_KEY, slugs, (GDestroyNotify) g_hash_table_unref);
+	}
+	gtk_text_buffer_get_iter_at_offset (c->buffer, &a, start);
+	gtk_text_buffer_get_end_iter (c->buffer, &b);
+	text = gtk_text_buffer_get_text (c->buffer, &a, &b, FALSE);
+	g_strstrip (text);
+	slug = heading_slug (text);
+	g_free (text);
+
+	count = GPOINTER_TO_INT (g_hash_table_lookup (slugs, slug));
+	g_hash_table_insert (slugs, g_strdup (slug), GINT_TO_POINTER (count + 1));
+	name = count == 0 ? g_strconcat (ANCHOR_PREFIX, slug, NULL)
+			  : g_strdup_printf (ANCHOR_PREFIX "%s-%d", slug, count);
+	if (gtk_text_buffer_get_mark (c->buffer, name) == NULL)
+		gtk_text_buffer_create_mark (c->buffer, name, &a, TRUE);
+	g_free (name);
+	g_free (slug);
+}
+
 /* Überschrift; H1/H2 bekommen zusätzlich die Linie darunter. */
 static void
 emit_heading (Ctx *c, const gchar *text, gint level)
@@ -1337,6 +1390,7 @@ emit_heading (Ctx *c, const gchar *text, gint level)
 	gint start = buffer_length (c);
 
 	emit_text_block (c, text, T (c, hname), 0);
+	register_heading_anchor (c, start);
 	if (level <= 2)
 		decor_add (c, DECOR_RULE, start, buffer_length (c) - 1, level);
 	g_free (hname);
@@ -2675,6 +2729,28 @@ nolphin_markdown_anchor_describe (GtkTextChildAnchor *anchor)
 		return g_strdup_printf ("image:%s", img);
 	}
 	return NULL;
+}
+
+gboolean
+nolphin_markdown_view_scroll_to_anchor (GtkWidget *view, const gchar *anchor)
+{
+	GtkTextBuffer *buffer;
+	GtkTextMark *mark;
+	gchar *slug, *name;
+
+	g_return_val_if_fail (GTK_IS_TEXT_VIEW (view), FALSE);
+	g_return_val_if_fail (anchor != NULL, FALSE);
+
+	buffer = gtk_text_view_get_buffer (GTK_TEXT_VIEW (view));
+	slug = g_utf8_strdown (anchor, -1);
+	name = g_strconcat (ANCHOR_PREFIX, slug, NULL);
+	mark = gtk_text_buffer_get_mark (buffer, name);
+	g_free (slug);
+	g_free (name);
+	if (mark == NULL)
+		return FALSE;
+	gtk_text_view_scroll_to_mark (GTK_TEXT_VIEW (view), mark, 0.0, TRUE, 0.0, 0.0);
+	return TRUE;
 }
 
 void

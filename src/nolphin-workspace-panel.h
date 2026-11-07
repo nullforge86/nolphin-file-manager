@@ -108,6 +108,11 @@ void       nolphin_workspace_panel_show_gid          (GtkWidget *workspace_panel
 						       NolphinWindow *window,
 						       GFile *project_folder);
 
+/* Zeigt eine im Dateimanager ausgewählte Markdown-Datei auf der GID-Seite,
+ * solange diese sichtbar ist. */
+void       nolphin_workspace_panel_sync_gid          (GtkWidget *workspace_panel,
+						       GList     *selection);
+
 /* Zeigt den Handy-Austausch (Seitenleiste „Handy“, Datei ▸ Handy-Austausch)
  * und blendet das Panel ein. @autostart startet den Server sofort, wenn er
  * noch nicht läuft und ein lokales Netz vorhanden ist. */

@@ -21,6 +21,9 @@ G_BEGIN_DECLS
 /* Panel-Seite "gid" des rechten Arbeitsbereichs. */
 GtkWidget *nolphin_gid_page_new  (NolphinWindow *window);
 void       nolphin_gid_page_open (GtkWidget *page, GFile *project_folder);
+/* Zeigt @file im Panel, wenn es eine Markdown-Datei ist (Auswahl im
+ * Dateimanager). Andere Dateien lässt die Seite unberührt. */
+void       nolphin_gid_page_show_file (GtkWidget *page, GFile *file);
 
 G_END_DECLS
 

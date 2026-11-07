@@ -4966,6 +4966,24 @@ nolphin_workspace_panel_show_deb_builder (GtkWidget *workspace_panel, NolphinWin
 	workspace_panel_show_page (workspace_panel, window, "archive");
 }
 
+void
+nolphin_workspace_panel_sync_gid (GtkWidget *workspace_panel, GList *selection)
+{
+	GtkWidget *page;
+	GFile *location;
+
+	g_return_if_fail (GTK_IS_STACK (workspace_panel));
+
+	if (selection == NULL || selection->next != NULL ||
+	    g_strcmp0 (gtk_stack_get_visible_child_name (GTK_STACK (workspace_panel)), "gid") != 0)
+		return;
+	page = gtk_stack_get_child_by_name (GTK_STACK (workspace_panel), "gid");
+	location = nolphin_file_get_location (NOLPHIN_FILE (selection->data));
+	if (page != NULL && location != NULL)
+		nolphin_gid_page_show_file (page, location);
+	g_clear_object (&location);
+}
+
 /* Hält die Eigenschaften-Seite synchron mit der Auswahl im Hauptfenster,
  * solange sie sichtbar ist (ohne Auswahl: der aktuelle Ordner). */
 void

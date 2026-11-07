@@ -55,6 +55,10 @@ void       nolphin_markdown_view_set_link_handler (GtkWidget               *view
 						   NolphinMarkdownLinkFunc  func,
 						   gpointer                 user_data);
 
+/* Springt zur Überschrift mit dem GitHub-Anker @anchor (z. B. "mein-abschnitt",
+ * ohne "#"). Liefert FALSE, wenn es keine solche Überschrift gibt. */
+gboolean   nolphin_markdown_view_scroll_to_anchor (GtkWidget *view, const gchar *anchor);
+
 /* Rendert @markdown in @buffer (legt die benötigten Tags selbst an und
  * ersetzt den bisherigen Inhalt). Für nolphin_markdown_view_set_text() und
  * Tests ohne Display. Link-Ziele hängen als Objektdaten
